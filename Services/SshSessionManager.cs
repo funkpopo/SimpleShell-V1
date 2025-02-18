@@ -2,7 +2,7 @@
 using Renci.SshNet;
 using System.Collections.Generic;
 
-namespace SshNetWebTerminal.Services;
+namespace DotnetTerminal.Services;
 
 public static class SshSessionManager
 {

@@ -1,9 +1,9 @@
 using System;
 using System.Windows.Forms;
 using System.Drawing;
-using SshNetWebTerminal.Models;
+using DotnetTerminal.Models;
 
-namespace SshNetWebTerminal.Forms
+namespace DotnetTerminal.Forms
 {
     public partial class SettingsForm : Form
     {
@@ -74,7 +74,10 @@ namespace SshNetWebTerminal.Forms
 
         private void LoadSettings()
         {
-            languageComboBox.SelectedItem = config.Settings.Language;
+            if (languageComboBox != null)
+            {
+                languageComboBox.SelectedItem = config.Settings.Language;
+            }
         }
 
         private void SaveSettings()

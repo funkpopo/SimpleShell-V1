@@ -1,4 +1,4 @@
-namespace SshNetWebTerminal.Forms;
+namespace DotnetTerminal.Forms;
 
 public class TextInputDialog : Form
 {

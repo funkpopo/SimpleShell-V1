@@ -2,15 +2,16 @@ using Microsoft.Web.WebView2.Core;
 using System.Windows.Forms;
 using System.Drawing;
 using System.Text.Json;
-using SshNetWebTerminal.Models;
+using DotnetTerminal.Models;
 using System.IO;
 using System.Xml.Linq;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Extensions.Logging;
 
-namespace SshNetWebTerminal.Forms;
+namespace DotnetTerminal.Forms;
 
 public partial class MainForm : Form
 {
@@ -24,8 +25,9 @@ public partial class MainForm : Form
     private List<ConnectionConfig> connections = new();
     private bool isDoubleClickExpanding = false;
     private ConfigRoot config = new();
+    private readonly ILogger<MainForm> _logger;
     
-    public MainForm(string url)
+    public MainForm(string url, ILogger<MainForm> logger)
     {
         CheckForIllegalCrossThreadCalls = false;
         InitializeComponent();
@@ -44,6 +46,8 @@ public partial class MainForm : Form
             Path.GetDirectoryName(Application.ExecutablePath) ?? "",
             "config.json"
         );
+        
+        _logger = logger;
         
         LoadConnections();
     }
@@ -478,22 +482,41 @@ public partial class MainForm : Form
         }
     }
 
-    private void ConnectionTreeView_NodeDoubleClick(object? sender, TreeNodeMouseClickEventArgs e)
+    private async void ConnectionTreeView_NodeDoubleClick(object sender, TreeNodeMouseClickEventArgs e)
     {
-        if (e.Node?.Tag == null) return;
+        if (e.Node?.Tag is ConnectionConfig config && config.Type == "connection")
+        {
+            try
+            {
+                // 调用 WebView2 中的 JavaScript 函数
+                var result = await webView.CoreWebView2.ExecuteScriptAsync(
+                    $"connectToTerminal('{config.Id}')"
+                );
 
-        var config = (ConnectionConfig)e.Node.Tag;
-        if (config.Type == "folder")
-        {
-            // 设置标志，允许展开/折叠
-            isDoubleClickExpanding = true;
-            e.Node.Toggle();
-            isDoubleClickExpanding = false;
-        }
-        else if (config.Type == "connection")
-        {
-            // TODO: 实现连接逻辑
-            MessageBox.Show($"连接到: {config.Host}:{config.Port}");
+                if (result == "true")
+                {
+                    _logger.LogInformation("成功连接到 {Name}", config.Name);
+                }
+                else
+                {
+                    MessageBox.Show(
+                        $"连接失败: {config.Name}",
+                        "连接错误",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "连接时发生错误");
+                MessageBox.Show(
+                    $"连接错误: {ex.Message}",
+                    "错误",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-namespace SshNetWebTerminal.Models;
+namespace DotnetTerminal.Models;
 
 public class ErrorViewModel
 {

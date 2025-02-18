@@ -1,40 +1,82 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using DotnetTerminal.Models;
 
-namespace SshNetWebTerminal.Controllers
+namespace DotnetTerminal.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
     public class ConfigController : ControllerBase
     {
         private readonly string _configPath;
+        private readonly ILogger<ConfigController> _logger;
 
-        public ConfigController(IWebHostEnvironment env)
+        public ConfigController(IWebHostEnvironment env, ILogger<ConfigController> logger)
         {
-            _configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+            _configPath = Path.Combine(env.ContentRootPath, "config.json");
+            _logger = logger;
         }
 
-        [HttpGet]
-        public IActionResult GetConfig()
+        [HttpGet("{id}")]
+        public async Task<ActionResult<ConnectionConfig>> GetConnection(string id)
+        {
+            try
+            {
+                var config = await LoadConfig();
+                var connection = FindConnection(config.Connections, id);
+                if (connection == null)
+                {
+                    return NotFound();
+                }
+                return Ok(connection);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "获取连接配置失败");
+                return StatusCode(500, "内部服务器错误");
+            }
+        }
+
+        private ConnectionConfig? FindConnection(List<ConnectionConfig> connections, string id)
+        {
+            foreach (var conn in connections)
+            {
+                if (conn.Id == id) return conn;
+                var child = FindConnection(conn.Children, id);
+                if (child != null) return child;
+            }
+            return null;
+        }
+
+        private async Task<ConfigRoot> LoadConfig()
         {
             if (!System.IO.File.Exists(_configPath))
             {
-                return Ok(new { folders = new List<object>(), connections = new List<object>() });
+                return new ConfigRoot();
             }
 
-            var config = System.IO.File.ReadAllText(_configPath);
-            return Ok(JsonSerializer.Deserialize<object>(config));
+            var json = await System.IO.File.ReadAllTextAsync(_configPath);
+            return JsonSerializer.Deserialize<ConfigRoot>(json) ?? new ConfigRoot();
         }
 
         [HttpPost]
-        public IActionResult SaveConfig([FromBody] object config)
+        public async Task<IActionResult> SaveConfig([FromBody] ConfigRoot config)
         {
-            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            try 
             {
-                WriteIndented = true
-            });
-            System.IO.File.WriteAllText(_configPath, json);
-            return Ok();
+                var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+                await System.IO.File.WriteAllTextAsync(_configPath, json);
+                return Ok();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "保存配置失败");
+                return StatusCode(500, "保存配置失败");
+            }
         }
     }
 } 

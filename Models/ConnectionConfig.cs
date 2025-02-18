@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 using System.Drawing;
 
-namespace SshNetWebTerminal.Models;
+namespace DotnetTerminal.Models;
 
 // 添加全局设置类
 public class GlobalSettings
@@ -29,19 +29,19 @@ public class ConnectionConfig
     public string Name { get; set; } = string.Empty;
 
     [JsonPropertyName("type")]
-    public string Type { get; set; } = "folder"; // folder 或 connection
+    public string Type { get; set; } = "connection";
 
     [JsonPropertyName("host")]
-    public string? Host { get; set; }
+    public string Host { get; set; } = string.Empty;
 
     [JsonPropertyName("port")]
-    public int? Port { get; set; }
+    public int Port { get; set; } = 22;
 
     [JsonPropertyName("username")]
-    public string? Username { get; set; }
+    public string Username { get; set; } = string.Empty;
 
     [JsonPropertyName("password")]
-    public string? Password { get; set; }
+    public string Password { get; set; } = string.Empty;
 
     [JsonPropertyName("children")]
     public List<ConnectionConfig> Children { get; set; } = new();

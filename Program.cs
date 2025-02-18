@@ -1,8 +1,9 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using SshNetWebTerminal.Forms;
-using SshNetWebTerminal.Hubs;
-using SshNetWebTerminal.Services;
+using DotnetTerminal.Forms;
+using DotnetTerminal.Hubs;
+using DotnetTerminal.Services;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,8 +66,22 @@ var uiThread = new Thread(() =>
     Application.EnableVisualStyles();
     Application.SetCompatibleTextRenderingDefault(false);
 
-    // 使用HTTP URL而不是HTTPS
-    var mainForm = new MainForm("http://localhost:5257");
+    // 创建日志工厂
+    var loggerFactory = LoggerFactory.Create(builder =>
+    {
+        builder
+            .AddConsole()
+            .AddDebug()
+            .SetMinimumLevel(LogLevel.Debug)
+            .AddFilter("Microsoft", LogLevel.Warning)
+            .AddFilter("System", LogLevel.Warning);
+    });
+
+    // 创建 MainForm 的 logger
+    var logger = loggerFactory.CreateLogger<MainForm>();
+
+    // 使用HTTP URL而不是HTTPS，并传入logger
+    var mainForm = new MainForm("http://localhost:5257", logger);
     mainForm.FormClosed += (s, e) =>
     {
         cts.Cancel();

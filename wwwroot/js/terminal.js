@@ -1,127 +1,132 @@
 ﻿"use strict";
 
-let isConnected = false;
-const socket = new signalR.HubConnectionBuilder().withUrl("/ssh").build();
-const terminalContainer = document.getElementById('terminal-container');
-const xterm = new Terminal({
-    rows: 24,
-    cols: 80,
-    'cursorBlink': false,
-    rendererType: "canvas"
-});
-
-// Fit the content to the canvas.
-const fitAddon = new FitAddon.FitAddon();
-xterm.loadAddon(fitAddon);
-xterm.open(terminalContainer);
-fitAddon.fit();
-
-// Resize when window changes.
-window.onresize = function () {
-    fitAddon.fit();
-}
-
-// Connect to the Web Socket.
-socket.start().catch(function (err) {
-    return console.error(err.toString());
-});
-
-// Backend -> Browser - Receiving a error
-socket.on("Error", function (data) {
-    xterm.write('\r\n*** Error: ' + data + ' ***\r\n');
-});
-
-// Backend -> Browser - Ssh disconnected.
-socket.on("Disconnect", function (data) {
-    isConnected = false;
-    toggleConnectBtns(isConnected);
-    xterm.write('\r\n*** Lost connection to SSH Server ***\r\n');
-});
-
-// Backend -> Browser - Receivng generic data.
-socket.on("ReceiveMessage", function (data) {
-    xterm.write(data);
-});
-
-// Browser -> Backend
-xterm.onData((data) => {
-    if (!isConnected) {
-        xterm.blur();
-        return;
+class TerminalManager {
+    constructor() {
+        this.connection = null;
+        this.term = null;
+        this.fitAddon = null;
+        this.connected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 3;
     }
 
-    socket.invoke("SendMessage", data).catch(function (err) {
-        return console.error(err.toString());
-    });
-});
+    async initialize() {
+        // 初始化 SignalR 连接
+        this.connection = new signalR.HubConnectionBuilder()
+            .withUrl("/ssh")
+            .withAutomaticReconnect()
+            .build();
 
-// Browser navigates away, force a disconnect.
-window.addEventListener("unload", function (event) {
-    if (isConnected) {
-        socket.invoke("Disconnect").catch(function (err) {
-            return console.error(err.toString());
+        // 设置事件处理器
+        this.setupEventHandlers();
+        
+        // 初始化终端
+        this.initializeTerminal();
+        
+        // 启动连接
+        await this.connection.start();
+    }
+
+    setupEventHandlers() {
+        this.connection.on("ReceiveMessage", (data) => {
+            this.term.write(data);
         });
-    }
-    return true;
-});
 
-// Connect button.
-document.getElementById("connectBtn").addEventListener("click", function (event) {
-    event.preventDefault();
+        this.connection.on("ConnectionEstablished", () => {
+            this.connected = true;
+            this.reconnectAttempts = 0;
+            this.term.write("\r\n\x1b[32m连接成功\x1b[0m\r\n");
+        });
 
-    const host = document.getElementById("host").value;
-    const user = document.getElementById("user").value;
-    const pass = document.getElementById("pass").value;
+        this.connection.on("ConnectionError", (error) => {
+            this.connected = false;
+            this.term.write(`\r\n\x1b[31m错误: ${error}\x1b[0m\r\n`);
+        });
 
-    if (isConnected) {
-        xterm.write('\r\n*** Disconnected from SSH Server ***\r\n');
+        this.connection.on("Disconnect", () => {
+            this.connected = false;
+            this.term.write("\r\n\x1b[33m连接已断开\x1b[0m\r\n");
+        });
 
-        // Send the message we want to connect to a host.
-        socket.invoke("Disconnect", host).catch(function (err) {
-            return console.error(err.toString());
+        this.connection.onreconnecting(() => {
+            this.term.write("\r\n\x1b[33m正在重新连接...\x1b[0m\r\n");
+        });
+
+        // 处理终端输入
+        this.term.onData(data => {
+            if (this.connected) {
+                this.connection.invoke("SendMessage", data).catch(err => {
+                    console.error("发送消息失败:", err);
+                });
+            }
         });
     }
 
-    // Connect.
-    xterm.write('\r\n*** Conneccting to SSH Server***\r\n');
+    initializeTerminal() {
+        this.term = new Terminal({
+            fontSize: 14,
+            lineHeight: 1.2,
+            theme: {
+                background: '#000'
+            }
+        });
 
-    // Send the message we want to connect to a host.
-    socket.invoke("Connect", host, user, pass).then(function () {
-        xterm.write('\r\n*** Connected to SSH Server ***\r\n');
-        isConnected = true;
-        toggleConnectBtns(isConnected);
-        xterm.focus();
-    }).catch(function (err) {
-        return console.error(err);
-    });
-});
-
-// Disconnect button.
-document.getElementById("disconnectBtn").addEventListener("click", function (event) {
-    event.preventDefault();
-
-    if (isConnected) {
-        socket.invoke("Disconnect").catch(function (err) {
-            return console.error(err.toString());
+        this.fitAddon = new FitAddon.FitAddon();
+        this.term.loadAddon(this.fitAddon);
+        
+        // 打开终端
+        this.term.open(document.getElementById('terminal'));
+        this.fitAddon.fit();
+        
+        // 监听窗口大小变化
+        window.addEventListener('resize', () => {
+            this.fitAddon.fit();
         });
     }
-});
 
-function toggleConnectBtns(isConnected = false) {
-    if (isConnected) {
-        if (!document.getElementById('connectBtn').hasAttribute('disabled')) {
-            document.getElementById('connectBtn').setAttribute('disabled', 'disabled');
-        }
-        if (document.getElementById('disconnectBtn').hasAttribute('disabled')) {
-            document.getElementById('disconnectBtn').removeAttribute('disabled');
+    async connect(configId) {
+        try {
+            console.log('开始建立连接:', configId);
+            
+            if (!this.connection.state) {
+                console.log('正在启动 SignalR 连接...');
+                await this.connection.start();
+            }
+            
+            console.log('正在初始化终端连接...');
+            await this.connection.invoke("InitializeConnection", configId);
+            
+            this.term.clear();
+            this.term.focus();
+            console.log('连接成功');
+            return true;
+        } catch (err) {
+            console.error("连接失败:", err);
+            this.term.write(`\r\n\x1b[31m连接失败: ${err.message}\x1b[0m\r\n`);
+            return false;
         }
     }
-    else {
-        if (document.getElementById('connectBtn').hasAttribute('disabled')) {
-            document.getElementById('connectBtn').removeAttribute('disabled');
-        }
-        if (!document.getElementById('disconnectBtn').hasAttribute('disabled')) {
-            document.getElementById('disconnectBtn').setAttribute('disabled', 'disabled');
+
+    async disconnect() {
+        if (this.connected) {
+            try {
+                await this.connection.invoke("Disconnect");
+            } catch (err) {
+                console.error("断开连接失败:", err);
+            }
         }
     }
 }
+
+// 创建并导出实例
+window.terminalManager = new TerminalManager();
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', async () => {
+    await window.terminalManager.initialize();
+});
+
+// 页面关闭前断开连接
+window.addEventListener('beforeunload', () => {
+    window.terminalManager.disconnect();
+});

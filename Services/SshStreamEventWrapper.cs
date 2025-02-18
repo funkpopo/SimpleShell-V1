@@ -3,12 +3,13 @@ using Renci.SshNet;
 using Renci.SshNet.Common;
 using System.Text;
 
-namespace SshNetWebTerminal.Services;
+namespace DotnetTerminal.Services;
 
 public class SshStreamEventWrapper : IDisposable
 {
     private readonly ISingleClientProxy Socket;
     private readonly ShellStream ShellStream;
+    private bool isDisposed;
 
     public SshStreamEventWrapper(ISingleClientProxy socket, ShellStream shellStream)
     {
@@ -17,14 +18,23 @@ public class SshStreamEventWrapper : IDisposable
 
         ShellStream.DataReceived += DataReceived;
         ShellStream.ErrorOccurred += ErrorOccurred;
-        ShellStream.Closed += Closed;
     }
 
-    private async void DataReceived(object? _, ShellDataEventArgs e) => await Socket.SendAsync("ReceiveMessage", Encoding.UTF8.GetString(e.Data));
+    private async void DataReceived(object? _, ShellDataEventArgs e) 
+    {
+        if (!isDisposed)
+        {
+            await Socket.SendAsync("ReceiveMessage", Encoding.UTF8.GetString(e.Data));
+        }
+    }
 
-    private async void ErrorOccurred(object? _, ExceptionEventArgs e) => await Socket.SendAsync("Error", e.Exception.Message);
-
-    private async void Closed(object? sender, EventArgs e) => await Socket.SendAsync("Disconnect");
+    private async void ErrorOccurred(object? _, ExceptionEventArgs e) 
+    {
+        if (!isDisposed)
+        {
+            await Socket.SendAsync("Error", e.Exception.Message);
+        }
+    }
 
     public void Dispose()
     {
@@ -34,11 +44,14 @@ public class SshStreamEventWrapper : IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
-        if (disposing)
+        if (!isDisposed)
         {
-            ShellStream.DataReceived -= DataReceived;
-            ShellStream.ErrorOccurred -= ErrorOccurred;
-            ShellStream.Closed -= Closed;
+            if (disposing)
+            {
+                ShellStream.DataReceived -= DataReceived;
+                ShellStream.ErrorOccurred -= ErrorOccurred;
+            }
+            isDisposed = true;
         }
     }
 }

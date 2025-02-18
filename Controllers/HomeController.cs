@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using SshNetWebTerminal.Models;
+using DotnetTerminal.Models;
 using System.Diagnostics;
 
-namespace SshNetWebTerminal.Controllers;
+namespace DotnetTerminal.Controllers;
 public class HomeController : Controller
 {
     private readonly ILogger<HomeController> _logger;
