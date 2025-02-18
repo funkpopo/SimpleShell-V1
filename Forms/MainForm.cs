@@ -167,6 +167,7 @@ public partial class MainForm : Form
         // 更新按钮前景色
         settingsButton.ForeColor = isDarkTheme ? Color.White : Color.Black;
         themeButton.ForeColor = isDarkTheme ? Color.White : Color.Black;
+        connectionsButton.ForeColor = isDarkTheme ? Color.White : Color.Black;
         
         // 更新按钮悬停颜色
         settingsButton.FlatAppearance.MouseOverBackColor = isDarkTheme ?
@@ -177,9 +178,14 @@ public partial class MainForm : Form
             Color.FromArgb(70, 70, 70) : // 深色主题悬停色
             Color.FromArgb(220, 220, 220); // 浅色主题悬停色
         
+        connectionsButton.FlatAppearance.MouseOverBackColor = isDarkTheme ?
+            Color.FromArgb(70, 70, 70) : // 深色主题悬停色
+            Color.FromArgb(220, 220, 220); // 浅色主题悬停色
+        
         // 重新生成图标以匹配新主题
         settingsButton.Image = GetSettingsIcon(isDarkTheme);
         themeButton.Image = GetThemeIcon(isDarkTheme);
+        connectionsButton.Image = GetConnectionsIcon(isDarkTheme);
         
         // 通过 JavaScript 切换 WebView 的主题
         string script = isDarkTheme ? 
@@ -223,6 +229,18 @@ public partial class MainForm : Form
                     }
                 }
             }
+        }
+
+        // 更新图标
+        if (connectionTreeView?.ImageList != null)
+        {
+            connectionTreeView.ImageList.Images.RemoveByKey("folder");
+            connectionTreeView.ImageList.Images.RemoveByKey("connection");
+            connectionTreeView.ImageList.Images.Add("folder", CreateFolderIcon(isDarkTheme));
+            connectionTreeView.ImageList.Images.Add("connection", CreateConnectionIcon(isDarkTheme));
+            
+            // 强制刷新树视图
+            connectionTreeView.Refresh();
         }
     }
 
@@ -336,11 +354,8 @@ public partial class MainForm : Form
 
         // 创建树形视图
         var imageList = new ImageList();
-        imageList.Images.Add("folder", ConvertSvgToImage(File.ReadAllText(Path.Combine(
-            Path.GetDirectoryName(Application.ExecutablePath) ?? "",
-            "Resources",
-            "archive.svg"
-        )), !isDarkTheme));
+        imageList.Images.Add("folder", CreateFolderIcon(isDarkTheme));
+        imageList.Images.Add("connection", CreateConnectionIcon(isDarkTheme));  // 添加连接图标
         
         connectionTreeView = new TreeView
         {
@@ -393,8 +408,8 @@ public partial class MainForm : Form
         var node = new TreeNode(config.Name)
         {
             Tag = config,
-            ImageIndex = config.Type == "folder" ? 0 : -1, // 文件夹使用图标，连接项不使用图标
-            SelectedImageIndex = config.Type == "folder" ? 0 : -1
+            ImageIndex = config.Type == "folder" ? 0 : 1,  // 0 为文件夹图标，1 为连接图标
+            SelectedImageIndex = config.Type == "folder" ? 0 : 1  // 选中时使用相同的图标
         };
 
         foreach (var child in config.Children)
@@ -521,7 +536,6 @@ public partial class MainForm : Form
         }
         else
         {
-            // 点击空白处时取消选中
             connectionTreeView.SelectedNode = null;
         }
 
@@ -537,8 +551,8 @@ public partial class MainForm : Form
                 // 如果是文件夹，添加新建选项
                 if (config.Type == "folder")
                 {
-                    contextMenu.Items.Add("新建文件夹", GetFolderIcon(isDarkTheme), (s, args) => AddFolder_Click(s, args));
-                    contextMenu.Items.Add("新建连接", GetConnectionIcon(isDarkTheme), (s, args) => AddConnection_Click(s, args));
+                    contextMenu.Items.Add("新建文件夹", CreateFolderIcon(isDarkTheme), (s, args) => AddFolder_Click(s, args));
+                    contextMenu.Items.Add("新建连接", CreateConnectionIcon(isDarkTheme), (s, args) => AddConnection_Click(s, args));
                     contextMenu.Items.Add("-");
                 }
                 
@@ -588,8 +602,8 @@ public partial class MainForm : Form
             {
                 // 点击空白区域，显示新建菜单
                 var contextMenu = new ContextMenuStrip();
-                contextMenu.Items.Add("新建文件夹", GetFolderIcon(isDarkTheme), (s, args) => AddFolder_Click(s, args));
-                contextMenu.Items.Add("新建连接", GetConnectionIcon(isDarkTheme), (s, args) => AddConnection_Click(s, args));
+                contextMenu.Items.Add("新建文件夹", CreateFolderIcon(isDarkTheme), (s, args) => AddFolder_Click(s, args));
+                contextMenu.Items.Add("新建连接", CreateConnectionIcon(isDarkTheme), (s, args) => AddConnection_Click(s, args));
                 
                 // 设置菜单项样式
                 foreach (ToolStripItem item in contextMenu.Items)
@@ -633,14 +647,14 @@ public partial class MainForm : Form
     }
 
     // 树形视图节点绘制事件
-    private void ConnectionTreeView_DrawNode(object sender, DrawTreeNodeEventArgs e)
+    private void ConnectionTreeView_DrawNode(object? sender, DrawTreeNodeEventArgs e)
     {
-        if (e.Node?.Tag == null) return;
+        if (e.Node?.Tag == null || connectionTreeView == null) return;
 
         var selected = (e.State & TreeNodeStates.Selected) == TreeNodeStates.Selected;
         var focused = (e.State & TreeNodeStates.Focused) == TreeNodeStates.Focused;
         var config = (ConnectionConfig)e.Node.Tag;
-        var hot = e.Node == connectionTreeView?.GetNodeAt(connectionTreeView.PointToClient(Cursor.Position));
+        var hot = e.Node == connectionTreeView.GetNodeAt(connectionTreeView.PointToClient(Cursor.Position));
         
         // 绘制选中或悬停背景
         if (selected || hot)
@@ -652,31 +666,19 @@ public partial class MainForm : Form
                 (isDarkTheme ? Color.FromArgb(55, 55, 55) : Color.FromArgb(235, 235, 235));
             
             using var brush = new SolidBrush(backColor);
-            e.Graphics.FillRectangle(brush, new Rectangle(0, e.Bounds.Y, connectionTreeView!.Width, e.Bounds.Height));
+            e.Graphics.FillRectangle(brush, new Rectangle(0, e.Bounds.Y, connectionTreeView.Width, e.Bounds.Height));
         }
         
         // 计算文本和图标位置
-        int indent = e.Node.Level * connectionTreeView!.Indent;
+        int indent = e.Node.Level * connectionTreeView.Indent;
         var textX = e.Bounds.X + indent;
         
-        if (config.Type == "folder")
+        // 绘制图标
+        if (connectionTreeView.ImageList != null)
         {
-            // 绘制文件夹图标
-            if (connectionTreeView.ImageList?.Images[0] is Image folderIcon)
-            {
-                e.Graphics.DrawImage(folderIcon, textX, e.Bounds.Y + (e.Bounds.Height - folderIcon.Height) / 2);
-            }
-            textX += 20 + 4; // 图标宽度 + 间距
-        }
-        else
-        {
-            // 为连接项绘制随机颜色圆点
-            var dotColor = GetConnectionColor(config.Id);
-            using var dotBrush = new SolidBrush(dotColor);
-            var dotSize = 8;
-            var dotY = e.Bounds.Y + (e.Bounds.Height - dotSize) / 2;
-            e.Graphics.FillEllipse(dotBrush, textX, dotY, dotSize, dotSize);
-            textX += dotSize + 4; // 圆点宽度 + 间距
+            var icon = connectionTreeView.ImageList.Images[config.Type == "folder" ? 0 : 1];
+            e.Graphics.DrawImage(icon, textX, e.Bounds.Y + (e.Bounds.Height - icon.Height) / 2);
+            textX += icon.Width + 4; // 图标宽度 + 间距
         }
         
         // 绘制文本
@@ -713,88 +715,74 @@ public partial class MainForm : Form
         }
     }
 
-    // 添加新的图标生成方法
-    private Image GetFolderIcon(bool isDark)
+    // 添加创建文件夹图标的方法
+    private Image CreateFolderIcon(bool isDark)
     {
         var iconSize = 16;
         var bitmap = new Bitmap(iconSize, iconSize);
         using var g = Graphics.FromImage(bitmap);
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         
         var color = isDark ? Color.White : Color.Black;
-        using var pen = new Pen(color, 1.5f);
-        using var brush = new SolidBrush(color);
-
-        // 绘制文件夹底部
-        var folderBase = new Rectangle(2, 4, 12, 9);
-        g.DrawRectangle(pen, folderBase);
+        using var pen = new Pen(color, 1.2f);
+        
+        // 绘制文件夹主体
+        var folderBody = new Rectangle(1, 4, 13, 9);
+        using (var path = new GraphicsPath())
+        {
+            path.AddRectangle(folderBody);
+            g.DrawPath(pen, path);
+            
+            // 添加轻微的渐变效果
+            using var brush = new LinearGradientBrush(
+                folderBody,
+                Color.FromArgb(30, color),
+                Color.FromArgb(10, color),
+                LinearGradientMode.Vertical);
+            g.FillPath(brush, path);
+        }
         
         // 绘制文件夹顶部
         var points = new Point[]
         {
-            new Point(2, 4),
-            new Point(6, 4),
-            new Point(8, 2),
-            new Point(14, 2),
-            new Point(14, 4)
+            new Point(1, 4),    // 左下
+            new Point(5, 4),    // 中下
+            new Point(7, 2),    // 中上
+            new Point(14, 2),   // 右上
+            new Point(14, 4)    // 右下
         };
         g.DrawLines(pen, points);
-        
-        // 添加一点渐变效果
-        using (var path = new System.Drawing.Drawing2D.GraphicsPath())
-        {
-            path.AddRectangle(folderBase);
-            using var brush2 = new System.Drawing.Drawing2D.LinearGradientBrush(
-                folderBase,
-                Color.FromArgb(40, color),
-                Color.FromArgb(10, color),
-                System.Drawing.Drawing2D.LinearGradientMode.Vertical);
-            g.FillPath(brush2, path);
-        }
         
         return bitmap;
     }
 
-    private Image GetConnectionIcon(bool isDark)
+    private Image CreateConnectionIcon(bool isDark)
     {
         var iconSize = 16;
         var bitmap = new Bitmap(iconSize, iconSize);
         using var g = Graphics.FromImage(bitmap);
-        g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         
         var color = isDark ? Color.White : Color.Black;
-        using var pen = new Pen(color, 1.5f);
-        using var brush = new SolidBrush(color);
-
-        // 绘制显示器外框
+        using var pen = new Pen(color, 1.2f);
+        
+        // 绘制终端显示器
         var monitor = new Rectangle(2, 1, 12, 9);
         g.DrawRectangle(pen, monitor);
         
-        // 绘制屏幕内容（终端界面效果）
+        // 绘制显示器内容（终端界面效果）
         g.DrawLine(pen, 4, 4, 12, 4);
         g.DrawLine(pen, 4, 6, 10, 6);
         
-        // 绘制底座
-        var standTop = monitor.Bottom;
-        var standBottom = standTop + 4;
-        var standWidth = 6;
-        var standX = monitor.X + (monitor.Width - standWidth) / 2;
-        
-        // 绘制支架
-        var stand = new Point[]
+        // 绘制显示器底座
+        var standPoints = new Point[]
         {
-            new Point(standX, standTop),
-            new Point(standX + standWidth, standTop),
-            new Point(standX + standWidth + 2, standBottom),
-            new Point(standX - 2, standBottom)
+            new Point(6, 10),   // 左上
+            new Point(10, 10),  // 右上
+            new Point(11, 14),  // 右下
+            new Point(5, 14)    // 左下
         };
-        g.FillPolygon(brush, stand);
-        
-        // 添加高光效果
-        using (var highlightPen = new Pen(Color.FromArgb(80, color), 1))
-        {
-            g.DrawLine(highlightPen, 4, 2, 12, 2);
-        }
+        g.DrawPolygon(pen, standPoints);
         
         return bitmap;
     }
@@ -824,7 +812,7 @@ public partial class MainForm : Form
         var svg = File.ReadAllText(Path.Combine(
             Path.GetDirectoryName(Application.ExecutablePath) ?? "",
             "Resources",
-            isDark ? "ethernet.svg" : "ethernet.svg"
+            isDark ? "connection-fill.svg" : "connection.svg"
         ));
         return ConvertSvgToImage(svg, isDark);
     }
@@ -844,39 +832,33 @@ public partial class MainForm : Form
         return svgDocument.Draw(20, 20); // 统一设置图标大小为20x20
     }
 
-    // 添加获取连接颜色的方法
-    private Color GetConnectionColor(string id)
+    private Color ColorFromHSL(double hue, double saturation, double lightness)
     {
-        // 使用ID作为随机种子，确保同一连接始终获得相同的颜色
-        var random = new Random(id.GetHashCode());
-        
-        // 生成柔和的颜色
-        var hue = random.NextDouble();
-        var saturation = 0.3 + random.NextDouble() * 0.3; // 30-60%
-        var value = 0.8 + random.NextDouble() * 0.2; // 80-100%
-        
-        // 转换HSV到RGB
-        var hi = Convert.ToInt32(Math.Floor(hue * 6)) % 6;
-        var f = hue * 6 - Math.Floor(hue * 6);
-        var p = value * (1 - saturation);
-        var q = value * (1 - f * saturation);
-        var t = value * (1 - (1 - f) * saturation);
-
-        float r, g, b;
-        switch (hi)
+        double r = 0, g = 0, b = 0;
+        if (saturation == 0)
         {
-            case 0: r = (float)value; g = (float)t; b = (float)p; break;
-            case 1: r = (float)q; g = (float)value; b = (float)p; break;
-            case 2: r = (float)p; g = (float)value; b = (float)t; break;
-            case 3: r = (float)p; g = (float)q; b = (float)value; break;
-            case 4: r = (float)t; g = (float)p; b = (float)value; break;
-            default: r = (float)value; g = (float)p; b = (float)q; break;
+            r = g = b = lightness;
         }
+        else
+        {
+            double q = lightness < 0.5 ? lightness * (1 + saturation) : lightness + saturation - lightness * saturation;
+            double p = 2 * lightness - q;
 
-        return Color.FromArgb(
-            (int)(r * 255),
-            (int)(g * 255),
-            (int)(b * 255)
-        );
+            r = HueToRGB(p, q, hue + 1.0/3.0);
+            g = HueToRGB(p, q, hue);
+            b = HueToRGB(p, q, hue - 1.0/3.0);
+        }
+        
+        return Color.FromArgb(255, (int)(r * 255), (int)(g * 255), (int)(b * 255));
+    }
+
+    private double HueToRGB(double p, double q, double t)
+    {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1.0/6.0) return p + (q - p) * 6 * t;
+        if (t < 1.0/2.0) return q;
+        if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6;
+        return p;
     }
 } 
