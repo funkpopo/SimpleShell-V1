@@ -2,30 +2,63 @@
     ViewData["Title"] = "Home Page";
 }
 
-<div class="row p-1">
-    <div class="input-group">
-        <label class="input-group-text">Host</label>
-        <input type="text" id="host" class="form-control" />
-        <input type="button" id="connectBtn" value="Connect" class="btn btn-outline-primary" />
-        <input type="button" id="disconnectBtn" value="Disconnect" class="btn btn-outline-primary" disabled />
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <button class="btn btn-sm btn-outline-primary w-100" onclick="addFolder()">
+            <i class="bi bi-folder-plus"></i> 添加文件夹
+        </button>
+    </div>
+    <div id="folderList" class="folder-list">
+        <!-- 文件夹和连接项将通过JavaScript动态添加 -->
+    </div>
+    <div class="sidebar-footer">
+        <button class="btn btn-sm btn-outline-secondary sidebar-toggle" id="sidebarToggle">
+            <i class="bi bi-chevron-left"></i>
+        </button>
     </div>
 </div>
-<div class="row p-1">
-    <div class="input-group">
-        <label class="input-group-text">Username</label>
-        <input type="text" id="user" class="form-control" value="pi" />
-        <label class="input-group-text">Password</label>
-        <input type="password" id="pass" class="form-control" value="password" />
-    </div>
+
+<div class="main-content" id="mainContent">
+    <div id="terminal-container"></div>
 </div>
-<div id="terminal-container"></div>
 
 @section scripts {
-    @* Add Libraries *@
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="~/lib/xterm/xterm/css/xterm.css" asp-append-version="true" />
     <script src="~/lib/xterm/xterm/lib/xterm.js" asp-append-version="true"></script>
     <script src="~/lib/xterm/addon-fit/lib/addon-fit.js" asp-append-version="true"></script>
     <script src="~/lib/microsoft/signalr/dist/browser/signalr.js" asp-append-version="true"></script>
     <script src="~/js/terminal.js" asp-append-version="true"></script>
+    <script src="~/js/sidebar.js" asp-append-version="true"></script>
+    <script>
+        const terminalContainer = document.getElementById('terminal-container');
+        const term = new Terminal({
+            fontSize: 14,
+            lineHeight: 1.2,
+            theme: {
+                background: '#000'
+            }
+        });
 
+        // 创建 FitAddon 实例
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        
+        term.open(terminalContainer);
+        
+        // 初始适配
+        fitAddon.fit();
+
+        // 监听窗口大小变化
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+        });
+
+        // 监听侧边栏切换
+        document.getElementById('sidebarToggle').addEventListener('click', () => {
+            setTimeout(() => {
+                fitAddon.fit();
+            }, 300); // 等待侧边栏动画完成
+        });
+    </script>
 }

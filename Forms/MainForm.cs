@@ -48,7 +48,6 @@ public partial class MainForm : Form
         {
             var userDataFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "SshNetWebTerminal",
                 "WebView2Data"
             );
             
