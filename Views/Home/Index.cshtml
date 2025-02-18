@@ -1,35 +1,19 @@
 ﻿@{
-    ViewData["Title"] = "Home Page";
+    ViewData["Title"] = "WebSSH终端";
 }
 
-<div class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <button class="btn btn-sm btn-outline-primary w-100" onclick="addFolder()">
-            <i class="bi bi-folder-plus"></i> 添加文件夹
-        </button>
+<div class="webssh-container">
+    <div class="terminal-container">
+        <div id="terminal"></div>
     </div>
-    <div id="folderList" class="folder-list">
-        <!-- 文件夹和连接项将通过JavaScript动态添加 -->
-    </div>
-    <div class="sidebar-footer">
-        <button class="btn btn-sm btn-outline-secondary sidebar-toggle" id="sidebarToggle">
-            <i class="bi bi-chevron-left"></i>
-        </button>
-    </div>
-</div>
-
-<div class="main-content" id="mainContent">
-    <div id="terminal-container"></div>
 </div>
 
 @section scripts {
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="stylesheet" href="~/lib/xterm/xterm/css/xterm.css" asp-append-version="true" />
     <script src="~/lib/xterm/xterm/lib/xterm.js" asp-append-version="true"></script>
     <script src="~/lib/xterm/addon-fit/lib/addon-fit.js" asp-append-version="true"></script>
     <script src="~/lib/microsoft/signalr/dist/browser/signalr.js" asp-append-version="true"></script>
     <script src="~/js/terminal.js" asp-append-version="true"></script>
-    <script src="~/js/sidebar.js" asp-append-version="true"></script>
     <script>
         const terminalContainer = document.getElementById('terminal-container');
         const term = new Terminal({
@@ -54,11 +38,18 @@
             fitAddon.fit();
         });
 
-        // 监听侧边栏切换
-        document.getElementById('sidebarToggle').addEventListener('click', () => {
-            setTimeout(() => {
-                fitAddon.fit();
-            }, 300); // 等待侧边栏动画完成
-        });
+        // 语言和主题状态
+        let currentLanguage = localStorage.getItem('appLanguage') || 'zh-CN';
+        let isDarkTheme = localStorage.getItem('isDarkTheme') !== 'false';
+
+        // 初始化主题
+        if (!isDarkTheme) {
+            term.setOption('theme', { 
+                background: '#fff', 
+                foreground: '#000',
+                cursor: '#000'
+            });
+            document.body.classList.add('light-theme');
+        }
     </script>
 }

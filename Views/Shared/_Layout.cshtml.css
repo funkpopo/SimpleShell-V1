@@ -46,3 +46,51 @@ button.accept-policy {
   white-space: nowrap;
   line-height: 60px;
 }
+
+.webssh-container {
+    display: flex;
+    height: calc(100vh - 100px);
+    padding: 15px;
+    gap: 20px;
+}
+
+.connection-panel {
+    width: 300px;
+    padding: 15px;
+    border-right: 1px solid #dee2e6;
+}
+
+.terminal-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.terminal-toolbar {
+    padding: 10px 0;
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 10px;
+}
+
+#terminal {
+    flex: 1;
+    background: #000;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+    .webssh-container {
+        flex-direction: column;
+    }
+    
+    .connection-panel {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid #dee2e6;
+    }
+}
