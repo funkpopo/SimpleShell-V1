@@ -1,6 +1,7 @@
 # 依赖目录
 node_modules/
 /dist
+/dist_electron
 
 
 # 本地环境文件
