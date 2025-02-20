@@ -1,8 +1,8 @@
 # SimpleShell
 
-本项目前端基于Vue3 + ArcoDesign + Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
+本项目前端基于Vue3 + Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
 
-- 通过Vue实现显示页面，使用ArcoDesign作为UI框架
+- 通过Vue实现显示页面
 - 使用Xterm.js + node-pty实现网页终端功能
 - 可以文件夹式管理多个安全可靠的SSH连接
 
@@ -19,7 +19,7 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 ## 开发
 
-- Vue 3 + ArcoDesign + Xterm.js + node-pty + Electron
+- Vue 3 + Xterm.js + node-pty + Electron
 
 ## 安装依赖
 
