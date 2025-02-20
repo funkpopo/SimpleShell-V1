@@ -29,6 +29,9 @@ async function createWindow() {
     backgroundColor: '#1e1e1e'
   })
 
+  // 移除菜单栏
+  win.setMenu(null)
+
   if (process.env.WEBPACK_DEV_SERVER_URL) {
     // 如果在开发环境，加载开发服务器URL
     await win.loadURL(process.env.WEBPACK_DEV_SERVER_URL as string)

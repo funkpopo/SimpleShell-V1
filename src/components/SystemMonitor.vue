@@ -109,12 +109,17 @@ export default defineComponent({
   padding: 20px;
   height: 100%;
   overflow-y: auto;
+  background-color: #1e1e1e;
 
   .monitor-section {
     background-color: #2c2c2c;
     border-radius: 8px;
     padding: 15px;
     margin-bottom: 20px;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
 
     .section-header {
       display: flex;
