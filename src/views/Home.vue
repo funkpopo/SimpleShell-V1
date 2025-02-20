@@ -16,9 +16,8 @@
     </div>
   </div>
 </template>
-
 <script lang="ts">
-import { defineComponent, ref, onMounted, onUnmounted } from 'vue'
+import { defineComponent, ref, onUnmounted } from '@vue/runtime-core'
 import FileManager from '@/components/FileManager.vue'
 import TabTerminal from '@/components/TabTerminal.vue'
 import SystemMonitor from '@/components/SystemMonitor.vue'
@@ -179,11 +178,12 @@ export default defineComponent({
     position: relative;
     flex-shrink: 0;
 
+    /* 移除整体hover效果 */
     &:hover {
-      cursor: col-resize;
+      cursor: default;  /* 改为默认光标 */
     }
 
-    /* 添加左侧边缘视觉指示器 */
+    /* 左侧边缘视觉指示器 */
     &::before {
       content: '';
       position: absolute;
@@ -194,6 +194,7 @@ export default defineComponent({
       background-color: transparent;
       transition: background-color 0.2s;
       cursor: col-resize;
+      z-index: 1;  /* 确保边缘区域在内容之上 */
     }
 
     &:hover::before {

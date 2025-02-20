@@ -16,18 +16,11 @@
         <div class="terminal-wrapper" :id="'terminal-' + item.name"></div>
       </el-tab-pane>
     </el-tabs>
-    
-    <div class="add-terminal">
-      <el-button type="primary" @click="addNewTab">
-        <el-icon><Plus /></el-icon>
-        新建终端
-      </el-button>
-    </div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, onMounted } from 'vue'
+import { defineComponent, ref, onMounted } from '@vue/runtime-core'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -144,9 +137,17 @@ export default defineComponent({
     flex-direction: column;
     background-color: #1e1e1e;
     
+    .el-tabs__header {
+      margin: 0;
+      padding: 0;
+      border-bottom: 1px solid #333;
+      background-color: #2d2d2d;
+    }
+    
     .el-tabs__content {
       flex: 1;
       padding: 0;
+      height: calc(100% - 40px); /* 减去tabs header的高度 */
     }
     
     .el-tab-pane {
@@ -158,14 +159,25 @@ export default defineComponent({
     height: 100%;
     padding: 10px;
   }
+}
+
+:deep(.el-tabs__nav-wrap) {
+  padding: 0 10px;
+}
+
+:deep(.el-tabs__item) {
+  color: #fff !important;
+  border: none !important;
+  background-color: transparent;
+  height: 40px;
+  line-height: 40px;
   
-  .add-terminal {
-    padding: 10px;
-    border-top: 1px solid #333;
-    
-    .el-button {
-      width: 100%;
-    }
+  &.is-active {
+    background-color: #1e1e1e;
+  }
+  
+  &:hover {
+    color: #409eff !important;
   }
 }
 </style> 
