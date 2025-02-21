@@ -136,18 +136,21 @@ export default defineComponent({
     display: flex;
     flex-direction: column;
     background-color: #1e1e1e;
+    height: 100%;
     
     .el-tabs__header {
       margin: 0;
       padding: 0;
       border-bottom: 1px solid #333;
       background-color: #2d2d2d;
+      order: -1; /* 确保header在最上方 */
     }
     
     .el-tabs__content {
       flex: 1;
       padding: 0;
       height: calc(100% - 40px); /* 减去tabs header的高度 */
+      overflow: hidden; /* 防止内容溢出 */
     }
     
     .el-tab-pane {
