@@ -1,18 +1,12 @@
 <template>
   <div class="app-container">
-    <!-- 左侧文件树 -->
-    <div class="sidebar">
+    <div class="file-tree">
       <FileTree />
     </div>
-    
-    <!-- 中间终端区域 -->
     <div class="main-content">
-      <TabBar />
       <TerminalContainer />
     </div>
-    
-    <!-- 右侧系统监控 -->
-    <div class="system-monitor">
+    <div class="monitor-panel">
       <SystemMonitor />
     </div>
   </div>
@@ -20,20 +14,11 @@
 
 <script setup lang="ts">
 import FileTree from './components/FileTree.vue'
-import TabBar from './components/TabBar.vue'
 import TerminalContainer from './components/TerminalContainer.vue'
 import SystemMonitor from './components/SystemMonitor.vue'
 </script>
 
-<style>
-html, body {
-  margin: 0;
-  padding: 0;
-  height: 100vh;
-  width: 100vw;
-  overflow: hidden;
-}
-
+<style scoped>
 .app-container {
   display: flex;
   height: 100vh;
@@ -41,9 +26,8 @@ html, body {
   color: #fff;
 }
 
-.sidebar {
-  width: 250px;
-  background: #252526;
+.file-tree {
+  width: 240px;
   border-right: 1px solid #333;
 }
 
@@ -53,9 +37,7 @@ html, body {
   flex-direction: column;
 }
 
-.system-monitor {
-  width: 300px;
-  background: #252526;
-  border-left: 1px solid #333;
+.monitor-panel {
+  width: 240px;
 }
 </style> 

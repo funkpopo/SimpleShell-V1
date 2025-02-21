@@ -1,0 +1,51 @@
+/* 文件树样式优化 */
+.file-tree {
+  padding: 8px;
+}
+
+.file-tree-item {
+  padding: 4px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.file-tree-item:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+/* 标签页样式优化 */
+.terminal-tabs {
+  height: 36px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #333;
+}
+
+.terminal-tab {
+  padding: 8px 16px;
+  border-right: 1px solid #333;
+  font-size: 13px;
+}
+
+.terminal-tab.active {
+  background: #2d2d2d;
+  border-bottom: 2px solid #0078d4;
+}
+
+/* 监控区域样式 */
+.monitor-panel {
+  width: 240px;
+  background: #1e1e1e;
+  border-left: 1px solid #333;
+}
+
+.monitor-item {
+  padding: 12px;
+  border-bottom: 1px solid #333;
+}
+
+.monitor-title {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 8px;
+} 
