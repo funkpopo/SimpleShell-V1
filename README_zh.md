@@ -2,7 +2,7 @@
 
 本项目前端基于Vue3 + Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
 
-- 通过Vue实现显示页面
+- 通过Vue + JavaScript实现显示页面
 - 使用Xterm.js + node-pty实现网页终端功能
 - 可以文件夹式管理多个安全可靠的SSH连接
 

@@ -1,125 +1,139 @@
+<script setup>
+import { ref } from 'vue'
+import FileExplorer from './components/FileExplorer.vue'
+import TabBar from './components/TabBar.vue'
+import TerminalView from './components/TerminalView.vue'
+import SystemStats from './components/SystemStats.vue'
+
+const tabBarRef = ref(null)
+const activeTerminal = ref({
+  type: 'local',
+  connectionId: null
+})
+
+// 处理标签页变化
+const handleTabChange = (tab) => {
+  activeTerminal.value = tab
+}
+
+// 处理SSH连接
+const handleSSHConnect = (connectionId) => {
+  tabBarRef.value.addSSHTab(connectionId)
+}
+
+// 处理SSH状态更新
+const handleSSHStatusUpdate = (connectionId, status) => {
+  tabBarRef.value.updateSSHTabStatus(connectionId, status)
+}
+</script>
+
 <template>
   <div class="app-container">
-    <!-- 顶部标签栏 -->
-    <div class="tab-bar">
-      <el-tabs v-model="activeTab" type="card" @tab-click="handleTabClick">
-        <el-tab-pane name="home" label="主页" />
-        <el-tab-pane name="settings" label="设置" />
-      </el-tabs>
+    <!-- 左侧文件管理区域 -->
+    <div class="sidebar">
+      <div class="logo">
+        <img src="./assets/logo.png" alt="SimpleShell" />
+        <span>SimpleShell</span>
+      </div>
+      <file-explorer @connect="handleSSHConnect" @status-change="handleSSHStatusUpdate" />
     </div>
 
-    <!-- 内容区域 -->
-    <div class="content-area">
-      <router-view></router-view>
+    <!-- 右侧主要内容区域 -->
+    <div class="main-content">
+      <!-- 顶部标签栏 -->
+      <div class="tabs">
+        <tab-bar ref="tabBarRef" @change="handleTabChange" />
+      </div>
+
+      <!-- 终端区域 -->
+      <div class="terminal-container">
+        <terminal-view :connection-id="activeTerminal.type === 'ssh' ? activeTerminal.connectionId : null" />
+      </div>
+
+      <!-- 右侧系统监控面板 -->
+      <div class="system-monitor">
+        <system-stats />
+      </div>
     </div>
   </div>
 </template>
 
-<script lang="ts">
-import { defineComponent, ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+<style>
+:root {
+  --primary-bg: #1e1e1e;
+  --secondary-bg: #252526;
+  --border-color: #3c3c3c;
+  --text-color: #cccccc;
+  --active-color: #0078d4;
+}
 
-export default defineComponent({
-  name: 'App',
-  setup() {
-    const router = useRouter()
-    const route = useRoute()
-    const activeTab = ref('home')
-
-    // 根据当前路由设置激活的标签
-    const updateActiveTab = () => {
-      const path = route.path
-      switch (path) {
-        case '/':
-          activeTab.value = 'home'
-          break
-        case '/settings':
-          activeTab.value = 'settings'
-          break
-      }
-    }
-
-    // 监听路由变化
-    router.afterEach(() => {
-      updateActiveTab()
-    })
-
-    // 初始化时设置激活的标签
-    updateActiveTab()
-
-    const handleTabClick = (tab: any) => {
-      switch (tab.props.name) {
-        case 'home':
-          router.push('/')
-          break
-        case 'settings':
-          router.push('/settings')
-          break
-      }
-    }
-
-    return {
-      activeTab,
-      handleTabClick
-    }
-  }
-})
-</script>
-
-<style lang="scss">
-html, body {
+* {
   margin: 0;
   padding: 0;
-  font-family: 'Consolas', monospace;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--primary-bg);
+  color: var(--text-color);
 }
 
 .app-container {
   display: flex;
-  flex-direction: column;
   height: 100vh;
-  background-color: #1e1e1e;
-  color: #fff;
-
-  .tab-bar {
-    background-color: #2d2d2d;
-    border-bottom: 1px solid #333;
-    
-    .el-tabs {
-      --el-text-color-primary: #fff;
-      
-      .el-tabs__header {
-        margin: 0;
-        border-bottom: none;
-      }
-      
-      .el-tabs__nav {
-        border: none;
-      }
-      
-      .el-tabs__item {
-        color: #fff;
-        border: none;
-        background-color: transparent;
-        
-        &.is-active {
-          background-color: #1e1e1e;
-        }
-        
-        &:hover {
-          color: #409eff;
-        }
-      }
-    }
-  }
-
-  .content-area {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: row;
-    position: relative;
-    padding: 0;
-    margin: 0;
-  }
+  overflow: hidden;
 }
-</style> 
+
+.sidebar {
+  width: 250px;
+  background-color: var(--secondary-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.logo {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.logo img {
+  width: 24px;
+  height: 24px;
+}
+
+.logo span {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.tabs {
+  height: 35px;
+  background-color: var(--secondary-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.terminal-container {
+  flex: 1;
+  background-color: var(--primary-bg);
+  position: relative;
+}
+
+.system-monitor {
+  width: 200px;
+  background-color: var(--secondary-bg);
+  border-left: 1px solid var(--border-color);
+  padding: 16px;
+}
+</style>
