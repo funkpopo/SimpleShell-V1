@@ -2,12 +2,12 @@
   <div class="home-container">
     <!-- 左侧文件管理器 -->
     <div class="file-manager" ref="fileManager" @mousedown="startResizeFileManager">
-      <FileManager />
+      <FileManager @open-connection="handleOpenConnection" />
     </div>
     
     <!-- 中间终端区域 -->
     <div class="terminal-container">
-      <TabTerminal />
+      <TabTerminal ref="tabTerminal" />
     </div>
     
     <!-- 右侧系统监控 -->
@@ -21,6 +21,7 @@ import { defineComponent, ref, onUnmounted } from '@vue/runtime-core'
 import FileManager from '@/components/FileManager.vue'
 import TabTerminal from '@/components/TabTerminal.vue'
 import SystemMonitor from '@/components/SystemMonitor.vue'
+import { ConnectionInfo } from '@/types/connection'
 
 export default defineComponent({
   name: 'Home',
@@ -32,10 +33,27 @@ export default defineComponent({
   setup() {
     const fileManager = ref<HTMLElement | null>(null)
     const systemMonitor = ref<HTMLElement | null>(null)
+    const tabTerminal = ref<InstanceType<typeof TabTerminal> | null>(null)
     let isResizing = false
     let currentResizer: 'fileManager' | 'systemMonitor' | null = null
     let startX = 0
     let startWidth = 0
+
+    const handleOpenConnection = (connection: ConnectionInfo) => {
+      if (!connection.authType) {
+        console.error('Missing authType in connection info')
+        return
+      }
+      
+      // 确保类型正确
+      const connWithName: ConnectionInfo = {
+        ...connection,
+        name: connection.label,
+        authType: connection.authType as 'password' | 'privateKey'
+      }
+      
+      tabTerminal.value?.handleConnection(connWithName)
+    }
 
     const startResizeFileManager = (e: MouseEvent) => {
       // 只在右边缘4px范围内才开始调整
@@ -110,8 +128,10 @@ export default defineComponent({
     return {
       fileManager,
       systemMonitor,
+      tabTerminal,
       startResizeFileManager,
-      startResizeSystemMonitor
+      startResizeSystemMonitor,
+      handleOpenConnection
     }
   }
 })

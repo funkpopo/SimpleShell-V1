@@ -96,7 +96,7 @@ export default defineComponent({
     const progressStyle = ref({
       strokeWidth: 8,
       memoryStrokeWidth: 15,
-      fontSize: 14
+      fontSize: 12
     })
 
     const getProgressColor = (percentage: number) => {
@@ -149,7 +149,7 @@ export default defineComponent({
       progressStyle.value = {
         strokeWidth: Math.max(Math.floor(8 * scale), 4),
         memoryStrokeWidth: Math.max(Math.floor(15 * scale), 8),
-        fontSize: Math.max(Math.floor(14 * scale), 10)
+        fontSize: Math.max(Math.floor(12 * scale), 10)
       }
     }
 

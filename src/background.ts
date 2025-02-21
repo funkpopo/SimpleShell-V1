@@ -1,12 +1,73 @@
-import { app, protocol, BrowserWindow } from 'electron'
+import { app, protocol, BrowserWindow, ipcMain } from 'electron'
 import { createProtocol } from 'vue-cli-plugin-electron-builder/lib'
 import installExtension, { VUEJS_DEVTOOLS } from 'electron-devtools-installer'
 import path from 'path'
+import './ssh-manager' // 导入SSH管理器
+import { terminalManager } from './terminal-manager'
+import { sshManager } from './ssh-manager'
+import * as pty from 'node-pty'
+import * as os from 'os'
+import { setupSSHHandlers } from './main/ssh-handler'
 
 const isDevelopment = process.env.NODE_ENV !== 'production'
 
 // 保持窗口对象的全局引用
 let win: BrowserWindow | null = null
+
+// 终端进程管理
+const terminals = new Map<string, pty.IPty>()
+
+// 设置 IPC 处理程序
+function setupIPC() {
+  // 终端相关
+  ipcMain.handle('terminal-create', async (event, { id, cols, rows }) => {
+    try {
+      const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash'
+      const terminal = pty.spawn(shell, [], {
+        name: 'xterm-256color',
+        cols: cols || 80,
+        rows: rows || 24,
+        cwd: os.homedir(),
+        env: process.env as { [key: string]: string }
+      })
+
+      terminals.set(id, terminal)
+
+      terminal.onData(data => {
+        if (win) {
+          win.webContents.send(`terminal-data-${id}`, data)
+        }
+      })
+
+      return { success: true }
+    } catch (error) {
+      console.error('Failed to create terminal:', error)
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  ipcMain.on('terminal-write', (event, { id, data }) => {
+    const terminal = terminals.get(id)
+    if (terminal) {
+      terminal.write(data)
+    }
+  })
+
+  ipcMain.on('terminal-resize', (event, { id, cols, rows }) => {
+    const terminal = terminals.get(id)
+    if (terminal) {
+      terminal.resize(cols, rows)
+    }
+  })
+
+  ipcMain.on('terminal-close', (event, id) => {
+    const terminal = terminals.get(id)
+    if (terminal) {
+      terminal.kill()
+      terminals.delete(id)
+    }
+  })
+}
 
 // 定义自定义协议
 protocol.registerSchemesAsPrivileged([
@@ -21,9 +82,9 @@ async function createWindow() {
     minWidth: 800,
     minHeight: 600,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false
+      nodeIntegration: process.env.NODE_ENV !== 'production',
+      contextIsolation: process.env.NODE_ENV === 'production',
+      preload: path.join(__dirname, 'preload.js')
     },
     frame: true,
     backgroundColor: '#1e1e1e'
@@ -65,6 +126,9 @@ app.on('ready', async () => {
       }
     }
   }
+  
+  setupIPC()
+  setupSSHHandlers()
   createWindow()
 })
 

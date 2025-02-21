@@ -31,11 +31,18 @@
 <script lang="ts">
 import { defineComponent, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Document, Folder } from '@element-plus/icons-vue'
 
 export default defineComponent({
   name: 'FileManager',
+  components: {
+    Document,
+    Folder
+  },
+
   setup() {
     const searchText = ref('')
+
     const fileTree = ref([
       {
         label: 'root',
@@ -87,12 +94,14 @@ export default defineComponent({
   
   .file-manager-header {
     padding: 10px;
+    display: flex;
+    gap: 10px;
   }
   
   .el-tree {
     background-color: transparent;
     color: #fff;
-    flex: 1;
+    height: 100%;
     overflow: auto;
   }
   

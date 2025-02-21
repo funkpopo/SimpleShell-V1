@@ -2,7 +2,8 @@
 node_modules/
 /dist
 /dist_electron
-
+package-lock.json
+connections.json
 
 # 本地环境文件
 .env.local
