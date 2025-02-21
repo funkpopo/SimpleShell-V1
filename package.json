@@ -1,52 +1,44 @@
 {
   "name": "simple-shell",
-  "private": true,
   "version": "1.0.0",
-  "description": "A modern SSH client GUI application",
-  "main": "background.js",
+  "description": "SSH客户端",
+  "main": "dist/main/index.js",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "serve": "vite",
-    "electron:serve": "concurrently \"npm run dev\" \"wait-on -d 1000 -t 30000 http-get://localhost:5173 && cross-env NODE_ENV=development electron .\"",
-    "electron:build": "electron-builder",
-    "electron:build:win": "electron-builder --win",
-    "electron:build:linux": "electron-builder --linux"
+    "serve": "vite serve",
+    "electron:serve": "cross-env NODE_ENV=development vite",
+    "electron:build": "vue-tsc --noEmit && vite build && electron-builder",
+    "build:win": "vue-tsc --noEmit && vite build && electron-builder --win",
+    "build:mac": "vue-tsc --noEmit && vite build && electron-builder --mac",
+    "build:linux": "vue-tsc --noEmit && vite build && electron-builder --linux"
   },
   "dependencies": {
-    "@electron/remote": "^2.1.2",
     "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-search": "^0.15.0",
     "@xterm/addon-web-links": "^0.11.0",
     "@xterm/xterm": "^5.5.0",
-    "electron": "^34.2.0",
     "electron-store": "^10.0.1",
+    "element-plus": "^2.9.5",
     "node-pty": "^1.1.0-beta30",
-    "node-ssh": "^13.2.0",
+    "pinia": "^3.0.1",
     "ssh2": "^1.16.0",
-    "uuid": "^11.1.0",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@types/electron": "^1.6.12",
+    "@types/electron-store": "^3.2.2",
+    "@types/node": "^22.13.4",
+    "@types/ssh2": "^1.15.4",
+    "@types/vue": "^1.0.31",
     "@vitejs/plugin-vue": "^5.2.1",
     "concurrently": "^9.1.2",
     "cross-env": "^7.0.3",
+    "electron": "^34.2.0",
     "electron-builder": "^25.1.8",
+    "electron-devtools-installer": "^4.0.0",
+    "typescript": "^5.7.3",
     "vite": "^6.1.1",
+    "vite-plugin-electron": "^0.29.0",
+    "vue-tsc": "^2.2.2",
     "wait-on": "^8.0.2"
-  },
-  "build": {
-    "appId": "com.simpleshell.app",
-    "productName": "SimpleShell",
-    "directories": {
-      "output": "dist_electron"
-    },
-    "win": {
-      "target": "nsis"
-    },
-    "linux": {
-      "target": "AppImage"
-    }
   }
 }

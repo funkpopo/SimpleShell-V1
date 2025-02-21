@@ -1,8 +1,8 @@
 # SimpleShell
 
-本项目前端基于Vue3 + Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
+本项目前端基于Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
 
-- 通过Vue + JavaScript实现显示页面
+- 通过NodeJS + JavaScript实现显示页面
 - 使用Xterm.js + node-pty实现网页终端功能
 - 可以文件夹式管理多个安全可靠的SSH连接
 
@@ -13,13 +13,13 @@
 
 ## 配置文件
 
-SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保存的SSH连接信息。出于安全考虑，该文件不会被提交到版本控制系统。
+SSH连接配置保存在 `connections.json` 文件中。该文件包含了所有保存的SSH连接信息。出于安全考虑，该文件不会被提交到版本控制系统。
 
 如果该文件不存在，应用程序会自动创建它。
 
 ## 开发
 
-- Vue 3 + Xterm.js + node-pty + Electron
+- Xterm.js + node-pty + Electron
 
 ## 安装依赖
 
