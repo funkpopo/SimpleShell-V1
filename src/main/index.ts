@@ -5,6 +5,9 @@ import icon from '../../resources/icon.png?asset'
 import * as os from 'os'
 import * as fs from 'fs'
 import * as path from 'path'
+import { Client } from 'ssh2'
+import * as pty from 'node-pty'
+import { ChildProcess, spawn } from 'child_process'
 
 // 定义连接配置的数据类型
 interface Connection {
@@ -167,6 +170,315 @@ async function getSystemInfo() {
   }
 }
 
+// 记录所有活动的SSH连接
+const activeConnections = new Map()
+
+// SSH会话管理
+ipcMain.handle('ssh:connect', async (_, connectionInfo) => {
+  try {
+    console.log('收到SSH连接请求:', connectionInfo.name)
+    
+    const { id, host, port, username, password, privateKey } = connectionInfo
+    
+    // 检查是否已经有活动连接
+    if (activeConnections.has(id)) {
+      console.log('连接已存在，复用现有连接')
+      return { success: true, id }
+    }
+    
+    // 创建新的SSH连接
+    const conn = new Client()
+    
+    // 返回一个Promise，等待连接完成或失败
+    return new Promise((resolve, reject) => {
+      const connectConfig: any = {
+        host,
+        port,
+        username,
+        readyTimeout: 10000, // 10秒超时
+      }
+      
+      // 添加认证方式
+      if (privateKey) {
+        connectConfig.privateKey = privateKey
+      } else if (password) {
+        connectConfig.password = password
+      }
+      
+      conn.on('ready', () => {
+        console.log(`SSH连接 ${id} 已就绪`)
+        
+        // 存储连接对象
+        activeConnections.set(id, {
+          connection: conn,
+          shells: new Map()
+        })
+        
+        resolve({ success: true, id })
+      })
+      
+      conn.on('error', (err) => {
+        console.error(`SSH连接 ${id} 错误:`, err)
+        reject({ success: false, error: err.message })
+      })
+      
+      // 开始连接
+      conn.connect(connectConfig)
+    })
+  } catch (error: any) {
+    console.error('SSH连接失败:', error)
+    return { success: false, error: error.message || '连接失败' }
+  }
+})
+
+// 创建Shell会话
+ipcMain.handle('ssh:shell', async (_, { connectionId, cols, rows }) => {
+  try {
+    const connInfo = activeConnections.get(connectionId)
+    if (!connInfo) {
+      return { success: false, error: '连接不存在' }
+    }
+    
+    const shellId = Date.now().toString()
+    
+    return new Promise((resolve, reject) => {
+      connInfo.connection.shell({ term: 'xterm-256color', cols, rows }, (err, stream) => {
+        if (err) {
+          console.error('创建Shell失败:', err)
+          reject({ success: false, error: err.message })
+          return
+        }
+        
+        // 存储Shell流
+        connInfo.shells.set(shellId, stream)
+        
+        // 设置数据接收事件
+        stream.on('data', (data) => {
+          const win = BrowserWindow.getFocusedWindow()
+          if (win) {
+            win.webContents.send('ssh:data', { connectionId, shellId, data: data.toString() })
+          }
+        })
+        
+        stream.on('close', () => {
+          console.log(`Shell ${shellId} 关闭`)
+          const win = BrowserWindow.getFocusedWindow()
+          win?.webContents.send('ssh:close', { connectionId, shellId })
+          connInfo.shells.delete(shellId)
+        })
+        
+        resolve({ success: true, shellId })
+      })
+    })
+  } catch (error: any) {
+    console.error('创建Shell失败:', error)
+    return { success: false, error: error.message || '创建Shell失败' }
+  }
+})
+
+// SSH输入数据处理
+ipcMain.on('ssh:input', (_, { connectionId, shellId, data }) => {
+  try {
+    const connInfo = activeConnections.get(connectionId)
+    if (!connInfo) {
+      console.error('连接不存在:', connectionId)
+      return
+    }
+    
+    const stream = connInfo.shells.get(shellId)
+    if (!stream) {
+      console.error('Shell不存在:', shellId)
+      return
+    }
+    
+    // 向SSH流写入数据
+    stream.write(data)
+  } catch (error) {
+    console.error('发送数据失败:', error)
+  }
+})
+
+// SSH调整窗口大小
+ipcMain.on('ssh:resize', (_, { connectionId, shellId, cols, rows }) => {
+  try {
+    const connInfo = activeConnections.get(connectionId)
+    if (!connInfo) return
+    
+    const stream = connInfo.shells.get(shellId)
+    if (!stream) return
+    
+    // 调整终端大小
+    stream.setWindow(rows, cols)
+  } catch (error) {
+    console.error('调整终端大小失败:', error)
+  }
+})
+
+// 关闭Shell
+ipcMain.on('ssh:close-shell', (_, { connectionId, shellId }) => {
+  try {
+    const connInfo = activeConnections.get(connectionId)
+    if (!connInfo) return
+    
+    const stream = connInfo.shells.get(shellId)
+    if (stream) {
+      // 关闭流
+      stream.end()
+      connInfo.shells.delete(shellId)
+    }
+  } catch (error) {
+    console.error('关闭Shell失败:', error)
+  }
+})
+
+// 关闭连接
+ipcMain.on('ssh:disconnect', (_, { connectionId }) => {
+  try {
+    const connInfo = activeConnections.get(connectionId)
+    if (!connInfo) return
+    
+    // 关闭所有Shell
+    for (const stream of connInfo.shells.values()) {
+      stream.end()
+    }
+    
+    // 关闭连接
+    connInfo.connection.end()
+    activeConnections.delete(connectionId)
+    console.log(`SSH连接 ${connectionId} 已关闭`)
+  } catch (error) {
+    console.error('关闭连接失败:', error)
+  }
+})
+
+//==============================
+// 终端相关函数
+//==============================
+
+// 启动Windows Terminal（作为独立进程）
+function launchWindowsTerminal() {
+  if (process.platform === 'win32') {
+    try {
+      const { spawn } = require('child_process')
+      // 尝试启动Windows Terminal
+      spawn('wt.exe', [], {
+        detached: true,
+        stdio: 'ignore',
+        shell: true
+      }).unref()
+      console.log('已启动Windows Terminal')
+      return true
+    } catch (error) {
+      console.error('启动Windows Terminal失败:', error)
+      return false
+    }
+  }
+  return false
+}
+
+// 为存储本地终端进程添加映射
+const localTerminals = new Map<string, {
+  pty: any,
+  dataCallback?: (data: { id: string; data: string }) => void
+}>()
+
+// 创建本地终端（集成到应用程序内）
+async function createLocalTerminal(options: { cols: number; rows: number }): Promise<{ success: boolean; id?: string; error?: string }> {
+  try {
+    const { cols, rows } = options
+    const id = Date.now().toString()
+    
+    // 确定要使用的Shell
+    let shell: string
+    let args: string[] = []
+    
+    // Windows特殊处理
+    if (process.platform === 'win32') {
+      shell = 'powershell.exe'
+      // 检查用户是否想使用Windows Terminal而不是集成终端
+      if (process.env.USE_EXTERNAL_TERMINAL === 'true') {
+        if (launchWindowsTerminal()) {
+          return { success: false, error: '已启动外部Windows Terminal' }
+        }
+      }
+    } else {
+      // Linux/Mac使用标准shell
+      shell = process.env.SHELL || '/bin/bash'
+      args = ['-l'] // 作为登录shell启动
+    }
+    
+    console.log(`启动本地终端: ${shell}`)
+    
+    // 创建伪终端
+    const terminalProcess = pty.spawn(shell, args, {
+      name: 'xterm-256color',
+      cols: cols || 80,
+      rows: rows || 24,
+      cwd: process.env.HOME || process.env.USERPROFILE,
+      env: { ...process.env, TERM: 'xterm-256color' }
+    })
+    
+    // 存储终端实例
+    localTerminals.set(id, {
+      pty: terminalProcess
+    })
+    
+    console.log(`本地终端 ${id} 已创建`)
+    
+    return { success: true, id }
+  } catch (error: any) {
+    console.error('创建本地终端失败:', error)
+    return { success: false, error: error.message || '创建终端失败' }
+  }
+}
+
+// 向终端发送输入
+function sendTerminalInput(options: { id: string; data: string }): void {
+  const { id, data } = options
+  
+  if (localTerminals.has(id)) {
+    const terminal = localTerminals.get(id)
+    if (terminal && terminal.pty) {
+      terminal.pty.write(data)
+    }
+  }
+}
+
+// 调整终端大小
+function resizeTerminal(options: { id: string; cols: number; rows: number }): void {
+  const { id, cols, rows } = options
+  
+  if (localTerminals.has(id)) {
+    const terminal = localTerminals.get(id)
+    if (terminal && terminal.pty) {
+      try {
+        terminal.pty.resize(cols, rows)
+      } catch (error) {
+        console.error('调整终端大小失败:', error)
+      }
+    }
+  }
+}
+
+// 关闭终端
+function closeTerminal(options: { id: string }): void {
+  const { id } = options
+  
+  if (localTerminals.has(id)) {
+    const terminal = localTerminals.get(id)
+    if (terminal && terminal.pty) {
+      try {
+        terminal.pty.kill()
+        console.log(`本地终端 ${id} 已关闭`)
+      } catch (error) {
+        console.error('关闭终端失败:', error)
+      } finally {
+        localTerminals.delete(id)
+      }
+    }
+  }
+}
+
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -230,39 +542,68 @@ app.whenReady().then(() => {
     saveConnections([])
   }
   
-  // 系统监控IPC处理
-  ipcMain.handle('get-system-info', async () => {
-    return await getSystemInfo()
-  })
+  // 设置IPC处理程序
+  function setupIPCHandlers() {
+    // 系统信息
+    ipcMain.handle('get-system-info', async () => {
+      return await getSystemInfo()
+    })
+    
+    // 加载连接
+    ipcMain.handle('load-connections', async () => {
+      return loadConnections()
+    })
+    
+    // 保存连接
+    ipcMain.handle('save-connections', async (event, organizations) => {
+      try {
+        saveConnections(organizations)
+        return { success: true }
+      } catch (error: any) {
+        console.error('保存连接失败:', error)
+        return { success: false, error: error.message || '保存失败' }
+      }
+    })
+    
+    // 启动Windows Terminal
+    ipcMain.handle('launch-windows-terminal', async () => {
+      return { success: launchWindowsTerminal() }
+    })
+  }
   
-  // 连接管理IPC处理
-  ipcMain.handle('load-connections', () => {
-    console.log('收到加载连接配置请求')
-    return loadConnections()
-  })
-  
-  ipcMain.handle('save-connections', (_, organizations: Organization[]) => {
-    console.log('主进程收到保存请求，数据大小:', Array.isArray(organizations) ? organizations.length : '非数组')
+  setupIPCHandlers()
+
+  // 本地终端IPC处理
+  ipcMain.handle('terminal:create', async (_, options) => {
+    console.log('收到创建本地终端请求')
+    const result = await createLocalTerminal(options)
     
-    // 确保organizations是数组类型
-    if (!Array.isArray(organizations)) {
-      console.warn('接收到非数组数据，转换为空数组')
-      organizations = []
-    }
-    
-    // 同步保存后再返回结果
-    const result = saveConnections(organizations)
-    console.log('保存结果:', result)
-    
-    // 无论结果如何，都重新读取一次确保数据一致性
-    if (result) {
-      setTimeout(() => {
-        console.log('保存后重新加载配置校验')
-        loadConnections()
-      }, 100)
+    if (result.success && result.id) {
+      // 设置数据接收回调
+      const terminalInfo = localTerminals.get(result.id)
+      if (terminalInfo && terminalInfo.pty) {
+        terminalInfo.pty.onData((data: string) => {
+          const win = BrowserWindow.getFocusedWindow()
+          if (win) {
+            win.webContents.send('terminal:data', { id: result.id, data })
+          }
+        })
+      }
     }
     
     return result
+  })
+  
+  ipcMain.on('terminal:input', (_, options) => {
+    sendTerminalInput(options)
+  })
+  
+  ipcMain.on('terminal:resize', (_, options) => {
+    resizeTerminal(options)
+  })
+  
+  ipcMain.on('terminal:close', (_, options) => {
+    closeTerminal(options)
   })
 
   createWindow()

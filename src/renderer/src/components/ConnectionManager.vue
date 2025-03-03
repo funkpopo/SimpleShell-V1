@@ -17,6 +17,11 @@ const props = defineProps<{
   isDarkTheme: boolean
 }>()
 
+// 定义事件
+const emit = defineEmits<{
+  (e: 'connect-to-server', connection: Connection): void
+}>()
+
 // 菜单类型
 type MenuType = 'organization' | 'connection' | 'area'
 
@@ -327,7 +332,8 @@ const connectToServer = (orgId: string | null, connId: string | null) => {
     const conn = org.connections.find(c => c.id === connId)
     if (conn) {
       console.log('连接到服务器:', conn)
-      // 这里实现连接逻辑
+      // 将连接信息发送到父组件
+      emit('connect-to-server', conn)
     }
   }
   closeMenu()

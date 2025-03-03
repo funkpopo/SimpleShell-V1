@@ -3,32 +3,99 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
-  loadConnections: () => ipcRenderer.invoke('load-connections'),
-  saveConnections: (organizations) => {
-    // 序列化数据以确保传递过程中不丢失
-    let serializableData;
-    try {
-      // 确保数据是可序列化的，通过深拷贝处理
-      serializableData = JSON.parse(JSON.stringify(organizations || []))
-      console.log('preload层接收到保存请求，数据大小:', 
-                 Array.isArray(serializableData) ? serializableData.length : '非数组')
-    } catch (err) {
-      console.error('序列化organizations失败:', err)
-      // 失败时发送空数组而不是拒绝请求
-      serializableData = []
-      console.log('序列化失败，使用空数组')
+  // 获取系统信息
+  getSystemInfo: async (): Promise<any> => {
+    return await ipcRenderer.invoke('get-system-info')
+  },
+  
+  // 加载连接配置
+  loadConnections: async (): Promise<any> => {
+    return await ipcRenderer.invoke('load-connections')
+  },
+  
+  // 保存连接配置
+  saveConnections: async (organizations: any): Promise<boolean> => {
+    return await ipcRenderer.invoke('save-connections', organizations)
+  },
+  
+  // SSH连接相关
+  sshConnect: async (connectionInfo: any): Promise<any> => {
+    return await ipcRenderer.invoke('ssh:connect', connectionInfo)
+  },
+  
+  // 创建SSH Shell
+  sshCreateShell: async (params: { connectionId: string, cols: number, rows: number }): Promise<any> => {
+    return await ipcRenderer.invoke('ssh:shell', params)
+  },
+  
+  // 发送SSH输入
+  sshSendInput: (params: { connectionId: string, shellId: string, data: string }): void => {
+    ipcRenderer.send('ssh:input', params)
+  },
+  
+  // 调整SSH终端大小
+  sshResizeTerminal: (params: { connectionId: string, shellId: string, cols: number, rows: number }): void => {
+    ipcRenderer.send('ssh:resize', params)
+  },
+  
+  // 关闭SSH Shell
+  sshCloseShell: (params: { connectionId: string, shellId: string }): void => {
+    ipcRenderer.send('ssh:close-shell', params)
+  },
+  
+  // 断开SSH连接
+  sshDisconnect: (params: { connectionId: string }): void => {
+    ipcRenderer.send('ssh:disconnect', params)
+  },
+  
+  // 本地终端相关
+  createLocalTerminal: async (params: { cols: number, rows: number }): Promise<any> => {
+    return await ipcRenderer.invoke('terminal:create', params)
+  },
+  
+  // 发送终端输入
+  sendTerminalInput: (params: { id: string, data: string }): void => {
+    ipcRenderer.send('terminal:input', params)
+  },
+  
+  // 调整终端大小
+  resizeTerminal: (params: { id: string, cols: number, rows: number }): void => {
+    ipcRenderer.send('terminal:resize', params)
+  },
+  
+  // 关闭终端
+  closeTerminal: (params: { id: string }): void => {
+    ipcRenderer.send('terminal:close', params)
+  },
+  
+  // 事件监听
+  onSshData: (callback: (data: any) => void): () => void => {
+    const listener = (_: any, data: any) => callback(data)
+    ipcRenderer.on('ssh:data', listener)
+    return () => {
+      ipcRenderer.removeListener('ssh:data', listener)
     }
-    
-    return ipcRenderer.invoke('save-connections', serializableData)
-      .then(result => {
-        console.log('保存操作完成，结果:', result)
-        return result
-      })
-      .catch(error => {
-        console.error('保存操作发生错误:', error)
-        throw error
-      })
+  },
+  
+  onSshClose: (callback: (data: any) => void): () => void => {
+    const listener = (_: any, data: any) => callback(data)
+    ipcRenderer.on('ssh:close', listener)
+    return () => {
+      ipcRenderer.removeListener('ssh:close', listener)
+    }
+  },
+  
+  onTerminalData: (callback: (data: any) => void): () => void => {
+    const listener = (_: any, data: any) => callback(data)
+    ipcRenderer.on('terminal:data', listener)
+    return () => {
+      ipcRenderer.removeListener('terminal:data', listener)
+    }
+  },
+  
+  // 通用IPC调用方法
+  invoke: async (channel: string, ...args: any[]): Promise<any> => {
+    return await ipcRenderer.invoke(channel, ...args)
   }
 }
 

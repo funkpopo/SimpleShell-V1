@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import NightIcon from './assets/night.svg'
 import DayIcon from './assets/day.svg'
 import SettingsNightIcon from './assets/settings-night.svg'
 import SettingsDayIcon from './assets/settings-day.svg'
 import SystemMonitor from './components/SystemMonitor.vue'
 import ConnectionManager from './components/ConnectionManager.vue'
+import MainContent from './components/MainContent.vue'
+
+// 定义MainContent组件实例的类型
+interface MainContentInstance {
+  addLocalTerminal: () => void
+  addSshConnection: (connection: any) => void
+}
 
 // 主题状态
 const isDarkTheme = ref(true)
@@ -123,6 +130,33 @@ const handleRightSplitMouseUp = () => {
   document.removeEventListener('mousemove', handleRightSplitMouseMove)
   document.removeEventListener('mouseup', handleRightSplitMouseUp)
 }
+
+// 获取MainContent组件的引用
+const mainContentRef = ref<MainContentInstance | null>(null)
+
+// 处理连接请求
+const handleConnectToServer = (connection: any) => {
+  if (mainContentRef.value) {
+    // 创建新的SSH终端标签页
+    mainContentRef.value.addSshConnection(connection)
+  }
+}
+
+// 在组件加载后设置键盘快捷键
+onMounted(() => {
+  // 设置主题切换快捷键
+  window.addEventListener('keydown', (e) => {
+    // Alt+T 切换主题
+    if (e.altKey && e.key === 't') {
+      toggleTheme()
+    }
+    
+    // Alt+L 打开新的本地终端
+    if (e.altKey && e.key === 'l' && mainContentRef.value) {
+      mainContentRef.value.addLocalTerminal()
+    }
+  })
+})
 </script>
 
 <template>
@@ -165,7 +199,10 @@ const handleRightSplitMouseUp = () => {
     </div>
 
     <!-- 主要内容区域 -->
-    <div class="main-content">123</div>
+    <MainContent
+      ref="mainContentRef"
+      :is-dark-theme="isDarkTheme"
+    />
 
     <!-- 右侧边栏 -->
     <div
@@ -197,7 +234,10 @@ const handleRightSplitMouseUp = () => {
             class="connection-section"
             :style="{ height: (100 - rightSidebarSplitPosition) + '%' }"
           >
-            <ConnectionManager :is-dark-theme="isDarkTheme" />
+            <ConnectionManager 
+              :is-dark-theme="isDarkTheme" 
+              @connect-to-server="handleConnectToServer"
+            />
           </div>
         </div>
       </div>
@@ -226,6 +266,8 @@ const handleRightSplitMouseUp = () => {
   transition:
     background-color 0.3s,
     color 0.3s;
+  justify-content: space-between;
+  box-sizing: border-box;
 }
 
 .app-container.dark-theme {
@@ -247,6 +289,7 @@ const handleRightSplitMouseUp = () => {
   display: flex;
   flex-direction: column;
   overflow: visible;
+  box-sizing: border-box;
 }
 
 .dark-theme .left-sidebar,
@@ -355,6 +398,8 @@ const handleRightSplitMouseUp = () => {
   min-width: 40px;
   max-width: 40px;
   resize: none;
+  margin: 0;
+  padding: 0;
   transition:
     width 0.2s ease-in-out,
     min-width 0.2s ease-in-out,
@@ -392,6 +437,19 @@ const handleRightSplitMouseUp = () => {
 .right-sidebar-toggle {
   left: -10px;
   border-radius: 4px 0 0 4px;
+  z-index: 100;
+}
+
+/* 确保折叠状态下的右侧切换按钮能够正确显示 */
+.right-sidebar-collapsed .right-sidebar-toggle {
+  left: -10px;
+  position: absolute;
+}
+
+/* 确保切换按钮不会被遮挡 */
+.right-sidebar {
+  position: relative;
+  z-index: 10;
 }
 
 .left-sidebar-toggle:hover,
@@ -486,12 +544,6 @@ const handleRightSplitMouseUp = () => {
   text-decoration: underline;
 }
 
-.main-content {
-  flex: 1;
-  padding: 20px;
-  overflow-y: auto;
-}
-
 /* 保持原有样式 */
 .logo {
   height: 6em;
@@ -519,5 +571,20 @@ const handleRightSplitMouseUp = () => {
 .right-sidebar .fade-slide-enter-from,
 .right-sidebar .fade-slide-leave-to {
   transform: translateX(20px);
+}
+
+/* 确保主内容区域填充可用空间 */
+:deep(MainContent) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 确保主内容容器内部也能自适应宽度 */
+:deep(.main-content-container) {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 </style>
