@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import CollectionNightIcon from '../assets/collection-night.svg'
 import CollectionDayIcon from '../assets/collection-day.svg'
 import AddCollectionNightIcon from '../assets/plus-night.svg'
@@ -68,9 +68,35 @@ const loadConnections = async () => {
 // 保存连接配置
 const saveConnections = async () => {
   try {
-    await window.api.saveConnections(organizations.value)
+    // 即使是空数组也允许保存
+    const orgData = JSON.parse(JSON.stringify(organizations.value))
+    console.log('前端发送保存请求，数据大小:', orgData.length, '个组织')
+    
+    // 添加重试机制
+    let retryCount = 0;
+    const maxRetries = 3;
+    let success = false;
+    
+    while (!success && retryCount < maxRetries) {
+      try {
+        await window.api.saveConnections(orgData)
+        console.log('保存连接配置成功')
+        success = true
+      } catch (error) {
+        retryCount++;
+        console.error(`保存连接配置失败(尝试 ${retryCount}/${maxRetries}):`, error)
+        
+        // 在重试之前等待一段时间
+        if (retryCount < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+    }
+    
+    return success
   } catch (error) {
     console.error('保存连接配置失败:', error)
+    return false
   }
 }
 
@@ -210,12 +236,15 @@ const openEditConnectionDialog = (orgId: string | null, connId: string | null) =
 
 // 处理表单保存
 const handleSaveForm = async (data: { organizationId: string | null; connectionId: string | null; formData: any }) => {
+  console.log('处理表单保存，数据:', data)
+  
   if (dialogType.value === 'organization') {
     if (data.organizationId) {
       // 编辑现有组织
       const org = organizations.value.find(o => o.id === data.organizationId)
       if (org) {
         org.name = data.formData.name
+        console.log('已更新组织名称:', org.name)
       }
     } else {
       // 创建新组织
@@ -225,6 +254,7 @@ const handleSaveForm = async (data: { organizationId: string | null; connectionI
         name: data.formData.name,
         connections: []
       })
+      console.log('已创建新组织:', data.formData.name)
       // 自动展开新创建的组织
       expandedOrganizations.value[newId] = true
     }
@@ -237,6 +267,7 @@ const handleSaveForm = async (data: { organizationId: string | null; connectionI
           const conn = org.connections.find(c => c.id === data.connectionId)
           if (conn) {
             Object.assign(conn, data.formData)
+            console.log('已更新连接:', conn.name)
           }
         } else {
           // 创建新连接
@@ -246,13 +277,21 @@ const handleSaveForm = async (data: { organizationId: string | null; connectionI
             ...data.formData
           }
           org.connections.push(newConnection)
+          console.log('已创建新连接:', newConnection.name)
         }
       }
     }
   }
   
+  console.log('组织数据更新后:', organizations.value)
+  
   // 保存到本地存储
-  await saveConnections()
+  try {
+    await saveConnections()
+    console.log('保存操作完成')
+  } catch (error) {
+    console.error('保存操作失败:', error)
+  }
 }
 
 // 删除组织
@@ -294,10 +333,25 @@ const connectToServer = (orgId: string | null, connId: string | null) => {
   closeMenu()
 }
 
+// 重置所有连接
+const resetAllConnections = () => {
+  organizations.value = []
+  expandedOrganizations.value = {}
+  closeMenu()
+  // 保存到本地存储
+  saveConnections()
+}
+
 // 组件挂载和卸载时的事件处理
 onMounted(async () => {
   // 加载连接配置
   await loadConnections()
+  
+  // 添加自动保存功能 - 每当organizations发生深度变化时保存
+  watch(organizations, async () => {
+    console.log('检测到organizations数据变化，自动保存')
+    await saveConnections()
+  }, { deep: true })
 })
 
 onUnmounted(() => {
@@ -374,6 +428,14 @@ onUnmounted(() => {
             class="plus-icon"
           />
           新建组织
+        </div>
+        
+        <div class="menu-item delete" @click="resetAllConnections" v-if="organizations.length > 0">
+          <img
+            :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+            class="delete-icon"
+          />
+          清空所有组织
         </div>
       </template>
       

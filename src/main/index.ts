@@ -29,48 +29,94 @@ const connectionsFilePath = is.dev
   ? path.join(process.cwd(), 'connections.json')
   : path.join(app.getPath('userData'), 'connections.json')
 
+// 输出环境信息
+console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
+console.log('连接配置文件路径:', connectionsFilePath)
+console.log('当前工作目录:', process.cwd())
+
 // 加载连接配置
 function loadConnections(): Organization[] {
   try {
     if (fs.existsSync(connectionsFilePath)) {
       const fileContent = fs.readFileSync(connectionsFilePath, 'utf-8')
-      return JSON.parse(fileContent)
+      // 如果文件存在但为空或内容无效，返回空数组
+      if (!fileContent.trim()) {
+        console.log('配置文件存在但为空，返回空数组')
+        return []
+      }
+      
+      try {
+        const parsed = JSON.parse(fileContent)
+        // 确认解析出的内容是数组
+        if (Array.isArray(parsed)) {
+          return parsed
+        } else {
+          console.warn('配置文件内容不是有效数组，返回空数组')
+          return []
+        }
+      } catch (parseError) {
+        console.error('解析配置文件失败:', parseError)
+        return []
+      }
     }
   } catch (error) {
     console.error('加载连接配置失败:', error)
   }
   
-  // 如果文件不存在或解析失败，返回默认配置
-  return [
-    {
-      id: '1',
-      name: '默认组织',
-      connections: [
-        {
-          id: '1-1',
-          name: '本地服务器',
-          host: 'localhost',
-          port: 22,
-          username: 'root',
-          description: '本地测试服务器'
-        }
-      ]
-    }
-  ]
+  // 如果文件不存在，返回空数组
+  console.log('配置文件不存在，返回空数组')
+  return []
 }
 
 // 保存连接配置
 function saveConnections(organizations: Organization[]): boolean {
   try {
     const dirPath = path.dirname(connectionsFilePath)
+    
+    // 确保目录存在
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true })
     }
     
-    fs.writeFileSync(connectionsFilePath, JSON.stringify(organizations, null, 2), 'utf-8')
+    // 在开发环境中，额外打印路径信息
+    if (is.dev) {
+      console.log('保存连接配置到:', connectionsFilePath)
+      // 数据可能很大，只打印长度信息
+      console.log('保存数据:', Array.isArray(organizations) ? `${organizations.length}个组织` : '非数组')
+    }
+    
+    // 检查organizations是否为数组
+    if (!Array.isArray(organizations)) {
+      console.error('保存失败: organizations不是数组')
+      return false
+    }
+    
+    // 检查数组是否为空 - 允许空数组
+    if (organizations.length === 0) {
+      console.log('保存的是空数组配置 - 允许')
+    }
+    
+    // 以同步方式写入文件
+    const jsonContent = JSON.stringify(organizations, null, 2)
+    fs.writeFileSync(connectionsFilePath, jsonContent, { encoding: 'utf-8', flag: 'w' })
+    console.log('文件写入完成，内容长度:', jsonContent.length, '字节')
+    
+    // 验证写入是否成功
+    if (fs.existsSync(connectionsFilePath)) {
+      const stats = fs.statSync(connectionsFilePath)
+      console.log('文件大小:', stats.size, '字节')
+      
+      // 验证内容是否正确写入
+      const readContent = fs.readFileSync(connectionsFilePath, 'utf-8')
+      const success = readContent.length > 0 && readContent === jsonContent
+      console.log('内容验证:', success ? '成功' : '失败')
+      
+      // 内容验证不再做额外处理，避免无限循环
+    }
+    
     return true
   } catch (error) {
-    console.error('保存连接配置失败:', error)
+    console.error('保存连接配置失败，错误详情:', error)
     return false
   }
 }
@@ -169,6 +215,21 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // 确保连接配置文件已初始化并有效
+  console.log('应用启动，初始化连接配置文件')
+  
+  let configExists = false
+
+  // 检查文件是否存在
+  if (fs.existsSync(connectionsFilePath)) {
+    configExists = true
+    console.log('配置文件已存在:', connectionsFilePath)
+  } else {
+    console.log('配置文件不存在，将创建空配置')
+    // 创建空的配置文件
+    saveConnections([])
+  }
+  
   // 系统监控IPC处理
   ipcMain.handle('get-system-info', async () => {
     return await getSystemInfo()
@@ -176,11 +237,32 @@ app.whenReady().then(() => {
   
   // 连接管理IPC处理
   ipcMain.handle('load-connections', () => {
+    console.log('收到加载连接配置请求')
     return loadConnections()
   })
   
   ipcMain.handle('save-connections', (_, organizations: Organization[]) => {
-    return saveConnections(organizations)
+    console.log('主进程收到保存请求，数据大小:', Array.isArray(organizations) ? organizations.length : '非数组')
+    
+    // 确保organizations是数组类型
+    if (!Array.isArray(organizations)) {
+      console.warn('接收到非数组数据，转换为空数组')
+      organizations = []
+    }
+    
+    // 同步保存后再返回结果
+    const result = saveConnections(organizations)
+    console.log('保存结果:', result)
+    
+    // 无论结果如何，都重新读取一次确保数据一致性
+    if (result) {
+      setTimeout(() => {
+        console.log('保存后重新加载配置校验')
+        loadConnections()
+      }, 100)
+    }
+    
+    return result
   })
 
   createWindow()

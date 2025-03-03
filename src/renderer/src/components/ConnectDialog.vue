@@ -151,14 +151,23 @@ const validateForm = (): boolean => {
 // 保存表单
 const saveForm = () => {
   if (!validateForm()) {
+    console.log('表单验证失败')
     return
   }
+  
+  console.log('表单验证成功，准备保存:', {
+    organizationId: props.organizationId,
+    connectionId: props.connectionId,
+    formData: { ...formData.value }
+  })
   
   emit('save', {
     organizationId: props.organizationId,
     connectionId: props.connectionId,
     formData: { ...formData.value }
   })
+  
+  console.log('已触发save事件')
   
   emit('update:visible', false)
 }
