@@ -3,7 +3,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  getSystemInfo: () => ipcRenderer.invoke('get-system-info')
+  getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
+  loadConnections: () => ipcRenderer.invoke('load-connections'),
+  saveConnections: (organizations) => ipcRenderer.invoke('save-connections', organizations)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

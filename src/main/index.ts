@@ -3,6 +3,77 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import * as os from 'os'
+import * as fs from 'fs'
+import * as path from 'path'
+
+// 定义连接配置的数据类型
+interface Connection {
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKey?: string
+  description?: string
+}
+
+interface Organization {
+  id: string
+  name: string
+  connections: Connection[]
+}
+
+// 连接配置文件路径
+const connectionsFilePath = is.dev
+  ? path.join(process.cwd(), 'connections.json')
+  : path.join(app.getPath('userData'), 'connections.json')
+
+// 加载连接配置
+function loadConnections(): Organization[] {
+  try {
+    if (fs.existsSync(connectionsFilePath)) {
+      const fileContent = fs.readFileSync(connectionsFilePath, 'utf-8')
+      return JSON.parse(fileContent)
+    }
+  } catch (error) {
+    console.error('加载连接配置失败:', error)
+  }
+  
+  // 如果文件不存在或解析失败，返回默认配置
+  return [
+    {
+      id: '1',
+      name: '默认组织',
+      connections: [
+        {
+          id: '1-1',
+          name: '本地服务器',
+          host: 'localhost',
+          port: 22,
+          username: 'root',
+          description: '本地测试服务器'
+        }
+      ]
+    }
+  ]
+}
+
+// 保存连接配置
+function saveConnections(organizations: Organization[]): boolean {
+  try {
+    const dirPath = path.dirname(connectionsFilePath)
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true })
+    }
+    
+    fs.writeFileSync(connectionsFilePath, JSON.stringify(organizations, null, 2), 'utf-8')
+    return true
+  } catch (error) {
+    console.error('保存连接配置失败:', error)
+    return false
+  }
+}
 
 // 获取CPU使用率
 async function getCpuUsage(): Promise<number> {
@@ -101,6 +172,15 @@ app.whenReady().then(() => {
   // 系统监控IPC处理
   ipcMain.handle('get-system-info', async () => {
     return await getSystemInfo()
+  })
+  
+  // 连接管理IPC处理
+  ipcMain.handle('load-connections', () => {
+    return loadConnections()
+  })
+  
+  ipcMain.handle('save-connections', (_, organizations: Organization[]) => {
+    return saveConnections(organizations)
   })
 
   createWindow()

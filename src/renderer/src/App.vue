@@ -139,11 +139,6 @@ const handleRightSplitMouseUp = () => {
       <div class="left-sidebar-content">
         <transition name="fade-slide">
           <div v-show="isLeftSidebarExpanded" class="left-sidebar-items">
-            <ul>
-              <li><a href="#">首页</a></li>
-              <li><a href="#">文档</a></li>
-              <li><a href="#">设置</a></li>
-            </ul>
           </div>
         </transition>
       </div>
@@ -202,7 +197,7 @@ const handleRightSplitMouseUp = () => {
             class="connection-section"
             :style="{ height: (100 - rightSidebarSplitPosition) + '%' }"
           >
-            <ConnectionManager />
+            <ConnectionManager :is-dark-theme="isDarkTheme" />
           </div>
         </div>
       </div>

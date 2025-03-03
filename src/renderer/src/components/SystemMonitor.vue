@@ -202,6 +202,7 @@ const memoryProgressStyle = computed(() => ({
   scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
   overflow-y: auto;
   max-height: 100%;
+  overflow-x: hidden;
 }
 
 /* 添加迷你监控样式 */
@@ -233,6 +234,9 @@ const memoryProgressStyle = computed(() => ({
 
 .right-sidebar-collapsed .mini-monitor {
   display: flex;
+  height: auto;
+  padding: 12px 0;
+  gap: 20px;
 }
 
 /* 迷你进度条样式 */
@@ -248,6 +252,17 @@ const memoryProgressStyle = computed(() => ({
   display: flex;
   flex-direction: column;
   align-items: center;
+  transition: all 0.3s ease;
+}
+
+/* 折叠状态下优化mini-progress样式 */
+.right-sidebar-collapsed .mini-progress {
+  width: 32px;
+  height: 80px;
+  border-radius: 16px;
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .mini-progress::before {
@@ -268,6 +283,14 @@ const memoryProgressStyle = computed(() => ({
   white-space: nowrap;
 }
 
+/* 折叠状态下优化标签样式 */
+.right-sidebar-collapsed .mini-progress::before {
+  top: 6px;
+  font-size: 10px;
+  padding: 2px 4px;
+  font-weight: 600;
+}
+
 .mini-progress-bar {
   position: absolute;
   bottom: 0;
@@ -277,6 +300,13 @@ const memoryProgressStyle = computed(() => ({
   box-shadow: 
     0 1px 0 rgba(255, 255, 255, 0.3) inset,
     0 -1px 0 rgba(0, 0, 0, 0.1) inset;
+}
+
+/* 折叠状态下优化进度条样式 */
+.right-sidebar-collapsed .mini-progress-bar {
+  box-shadow: 
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.2) inset;
 }
 
 .mini-progress-text {
@@ -294,6 +324,16 @@ const memoryProgressStyle = computed(() => ({
   background: rgba(0, 0, 0, 0.3);
   padding: 1px 3px;
   border-radius: 4px;
+}
+
+/* 折叠状态下优化文本样式 */
+.right-sidebar-collapsed .mini-progress-text {
+  bottom: 6px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  letter-spacing: 0;
+  font-weight: 500;
 }
 
 .mini-progress.cpu {
@@ -449,46 +489,20 @@ const memoryProgressStyle = computed(() => ({
   --section-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
 }
 
-/* 自定义滚动条样式 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 8px;
-  margin: 2px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.4);
-  border-radius: 8px;
-  transition: all 0.3s ease;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.6);
-}
-
-/* 暗色主题下的滚动条样式 */
-.dark-theme ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.dark-theme ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-/* 优化系统监控区域的滚动行为 */
+/* 滚动条样式已移至全局CSS */
+/* 组件特定的溢出处理 */
 .system-monitor {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
   overflow-y: auto;
   max-height: 100%;
+  overflow-x: hidden;
 }
 
-.dark-theme .system-monitor {
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+/* 折叠状态下的布局调整 */
+.right-sidebar-collapsed .system-monitor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0;
 }
 </style> 

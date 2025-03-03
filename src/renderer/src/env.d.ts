@@ -26,8 +26,27 @@ interface SystemInfo {
   }
 }
 
+interface Connection {
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  password?: string
+  privateKey?: string
+  description?: string
+}
+
+interface Organization {
+  id: string
+  name: string
+  connections: Connection[]
+}
+
 interface API {
   getSystemInfo(): Promise<SystemInfo>
+  loadConnections(): Promise<Organization[]>
+  saveConnections(organizations: Organization[]): Promise<boolean>
 }
 
 interface Window {

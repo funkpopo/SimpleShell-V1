@@ -169,3 +169,55 @@ code {
     display: none;
   }
 }
+
+/* 全局滚动条样式 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  transition: width 0.3s ease;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 8px;
+  margin: 2px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.4);
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.6);
+}
+
+/* 各元素悬停时滚动条行为 */
+*:hover::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+/* 暗色主题下的滚动条样式 */
+.dark-theme ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.dark-theme ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Firefox滚动条样式支持 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
+}
+
+*:hover {
+  scrollbar-width: auto;
+}
+
+.dark-theme * {
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}

@@ -4,13 +4,18 @@ import CollectionNightIcon from '../assets/collection-night.svg'
 import CollectionDayIcon from '../assets/collection-day.svg'
 import AddCollectionNightIcon from '../assets/plus-night.svg'
 import AddCollectionDayIcon from '../assets/plus-day.svg'
+import ConnectNightIcon from '../assets/connect-night.svg'
+import ConnectDayIcon from '../assets/connect-day.svg'
 import DeleteNightIcon from '../assets/delete-night.svg'
 import DeleteDayIcon from '../assets/delete-day.svg'
 import EditNightIcon from '../assets/edit-night.svg'
 import EditDayIcon from '../assets/edit-day.svg'
+import ConnectDialog from './ConnectDialog.vue'
 
-// 主题状态
-const isDarkTheme = ref(true)
+// 主题状态 - 通过props接收父组件的isDarkTheme
+const props = defineProps<{
+  isDarkTheme: boolean
+}>()
 
 // 菜单类型
 type MenuType = 'organization' | 'connection' | 'area'
@@ -34,27 +39,40 @@ interface Organization {
 }
 
 // 组织数据
-const organizations = ref<Organization[]>([
-  {
-    id: '1',
-    name: '默认组织',
-    connections: [
-      {
-        id: '1-1',
-        name: '本地服务器',
-        host: 'localhost',
-        port: 22,
-        username: 'root',
-        description: '本地测试服务器'
-      }
-    ]
-  }
-])
+const organizations = ref<Organization[]>([])
+
+// 对话框状态
+const dialogVisible = ref(false)
+const dialogType = ref<'organization' | 'connection'>('organization')
+const editingOrgId = ref<string | null>(null)
+const editingConnId = ref<string | null>(null)
 
 // 组织展开/折叠状态
-const expandedOrganizations = ref<Record<string, boolean>>({
-  '1': true // 默认展开第一个组织
-})
+const expandedOrganizations = ref<Record<string, boolean>>({})
+
+// 加载连接配置
+const loadConnections = async () => {
+  try {
+    const data = await window.api.loadConnections()
+    organizations.value = data
+    
+    // 默认展开第一个组织
+    if (data.length > 0) {
+      expandedOrganizations.value[data[0].id] = true
+    }
+  } catch (error) {
+    console.error('加载连接配置失败:', error)
+  }
+}
+
+// 保存连接配置
+const saveConnections = async () => {
+  try {
+    await window.api.saveConnections(organizations.value)
+  } catch (error) {
+    console.error('保存连接配置失败:', error)
+  }
+}
 
 // 切换组织展开/折叠状态
 const toggleOrganization = (orgId: string) => {
@@ -67,12 +85,6 @@ const menuType = ref<MenuType>('area')
 const menuPosition = ref({ x: 0, y: 0 })
 const selectedOrganizationId = ref<string | null>(null)
 const selectedConnectionId = ref<string | null>(null)
-
-// 编辑状态
-const isEditing = ref(false)
-const editingText = ref('')
-const editingItemId = ref<string | null>(null)
-const editingType = ref<'organization' | 'connection' | null>(null)
 
 // 为连接生成随机颜色
 const getConnectionColor = (connId: string) => {
@@ -153,213 +165,212 @@ const showMenu = (e: MouseEvent, type: MenuType, orgId?: string, connId?: string
 // 关闭右键菜单
 const closeMenu = () => {
   showContextMenu.value = false
-  if (!isEditing.value) {
-    selectedOrganizationId.value = null
-    selectedConnectionId.value = null
-  }
+  selectedOrganizationId.value = null
+  selectedConnectionId.value = null
 }
 
-// 新建组织
-const createOrganization = () => {
-  const newId = Date.now().toString()
-  organizations.value.push({
-    id: newId,
-    name: '新组织',
-    connections: []
-  })
-  
-  // 进入编辑模式
-  startEditing(newId, '新组织', 'organization')
+// 打开新建组织对话框
+const openCreateOrganizationDialog = () => {
+  dialogType.value = 'organization'
+  editingOrgId.value = null
+  editingConnId.value = null
+  dialogVisible.value = true
   closeMenu()
 }
 
-// 编辑组织名称
-const editOrganization = (orgId: string | null) => {
+// 打开编辑组织对话框
+const openEditOrganizationDialog = (orgId: string | null) => {
   if (!orgId) return
-  const org = organizations.value.find(o => o.id === orgId)
-  if (org) {
-    startEditing(orgId, org.name, 'organization')
-  }
+  dialogType.value = 'organization'
+  editingOrgId.value = orgId
+  editingConnId.value = null
+  dialogVisible.value = true
   closeMenu()
 }
 
-// 创建连接
-const createConnection = (orgId: string | null) => {
+// 打开新建连接对话框
+const openCreateConnectionDialog = (orgId: string | null) => {
   if (!orgId) return
-  const org = organizations.value.find(o => o.id === orgId)
-  if (org) {
-    const newId = `${orgId}-${Date.now()}`
-    const newConnection: Connection = {
-      id: newId,
-      name: '新连接',
-      host: '',
-      port: 22,
-      username: ''
-    }
-    org.connections.push(newConnection)
-    
-    // 进入编辑模式 (实际应该打开连接配置对话框)
-    // 此处简化为编辑名称
-    startEditing(newId, '新连接', 'connection')
-  }
+  dialogType.value = 'connection'
+  editingOrgId.value = orgId
+  editingConnId.value = null
+  dialogVisible.value = true
   closeMenu()
 }
 
-// 开始编辑
-const startEditing = (id: string, text: string, type: 'organization' | 'connection') => {
-  isEditing.value = true
-  editingText.value = text
-  editingItemId.value = id
-  editingType.value = type
-  
-  // 在下一个事件循环中聚焦输入框
-  setTimeout(() => {
-    const inputEl = document.getElementById('editing-input')
-    if (inputEl) {
-      inputEl.focus()
-    }
-  }, 0)
+// 打开编辑连接对话框
+const openEditConnectionDialog = (orgId: string | null, connId: string | null) => {
+  if (!orgId || !connId) return
+  dialogType.value = 'connection'
+  editingOrgId.value = orgId
+  editingConnId.value = connId
+  dialogVisible.value = true
+  closeMenu()
 }
 
-// 保存编辑
-const saveEditing = () => {
-  if (editingType.value === 'organization') {
-    const org = organizations.value.find(o => o.id === editingItemId.value)
-    if (org) {
-      org.name = editingText.value
+// 处理表单保存
+const handleSaveForm = async (data: { organizationId: string | null; connectionId: string | null; formData: any }) => {
+  if (dialogType.value === 'organization') {
+    if (data.organizationId) {
+      // 编辑现有组织
+      const org = organizations.value.find(o => o.id === data.organizationId)
+      if (org) {
+        org.name = data.formData.name
+      }
+    } else {
+      // 创建新组织
+      const newId = Date.now().toString()
+      organizations.value.push({
+        id: newId,
+        name: data.formData.name,
+        connections: []
+      })
+      // 自动展开新创建的组织
+      expandedOrganizations.value[newId] = true
     }
-  } else if (editingType.value === 'connection') {
-    for (const org of organizations.value) {
-      const conn = org.connections.find(c => c.id === editingItemId.value)
-      if (conn) {
-        conn.name = editingText.value
-        break
+  } else if (dialogType.value === 'connection') {
+    if (data.organizationId) {
+      const org = organizations.value.find(o => o.id === data.organizationId)
+      if (org) {
+        if (data.connectionId) {
+          // 编辑现有连接
+          const conn = org.connections.find(c => c.id === data.connectionId)
+          if (conn) {
+            Object.assign(conn, data.formData)
+          }
+        } else {
+          // 创建新连接
+          const newId = `${data.organizationId}-${Date.now()}`
+          const newConnection: Connection = {
+            id: newId,
+            ...data.formData
+          }
+          org.connections.push(newConnection)
+        }
       }
     }
   }
   
-  cancelEditing()
-}
-
-// 取消编辑
-const cancelEditing = () => {
-  isEditing.value = false
-  editingText.value = ''
-  editingItemId.value = null
-  editingType.value = null
-}
-
-// 处理键盘事件
-const handleKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Enter') {
-    saveEditing()
-  } else if (e.key === 'Escape') {
-    cancelEditing()
-  }
+  // 保存到本地存储
+  await saveConnections()
 }
 
 // 删除组织
-const deleteOrganization = (orgId: string | null) => {
+const deleteOrganization = async (orgId: string | null) => {
   if (!orgId) return
   organizations.value = organizations.value.filter(o => o.id !== orgId)
+  // 从展开状态中移除
+  delete expandedOrganizations.value[orgId]
   closeMenu()
+  
+  // 保存到本地存储
+  await saveConnections()
 }
 
 // 删除连接
-const deleteConnection = (orgId: string | null, connId: string | null) => {
+const deleteConnection = async (orgId: string | null, connId: string | null) => {
   if (!orgId || !connId) return
   const org = organizations.value.find(o => o.id === orgId)
   if (org) {
     org.connections = org.connections.filter(c => c.id !== connId)
   }
   closeMenu()
+  
+  // 保存到本地存储
+  await saveConnections()
+}
+
+// 连接到服务器
+const connectToServer = (orgId: string | null, connId: string | null) => {
+  if (!orgId || !connId) return
+  const org = organizations.value.find(o => o.id === orgId)
+  if (org) {
+    const conn = org.connections.find(c => c.id === connId)
+    if (conn) {
+      console.log('连接到服务器:', conn)
+      // 这里实现连接逻辑
+    }
+  }
+  closeMenu()
 }
 
 // 组件挂载和卸载时的事件处理
-onMounted(() => {
-  document.addEventListener('keydown', handleKeyDown)
+onMounted(async () => {
+  // 加载连接配置
+  await loadConnections()
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeyDown)
   window.removeEventListener('click', closeMenu)
 })
 </script>
 
 <template>
   <div class="connection-manager" @contextmenu="showMenu($event, 'area')">
-    <h3>连接管理</h3>
-    
-    <div class="connection-list">
-      <div 
-        v-for="org in organizations" 
-        :key="org.id" 
-        class="organization"
-      >
-        <!-- 组织名称 -->
+    <!-- 仅在展开状态显示标题和连接列表 -->
+    <div class="connection-manager-content">
+      <h3>连接管理</h3>
+      
+      <div class="connection-list">
         <div 
-          class="organization-header" 
-          @click="toggleOrganization(org.id)"
-          @contextmenu.stop="showMenu($event, 'organization', org.id)"
+          v-for="org in organizations" 
+          :key="org.id" 
+          class="organization"
         >
-          <div v-if="isEditing && editingItemId === org.id" class="editing-container">
-            <input 
-              id="editing-input"
-              v-model="editingText" 
-              @blur="saveEditing" 
-              @keydown="handleKeyDown"
-              class="editing-input"
-            />
-          </div>
-          <div v-else class="organization-name">
-            <img
-              :src="isDarkTheme ? CollectionNightIcon : CollectionDayIcon"
-              class="collection-icon"
-            />
-            {{ org.name }}
-          </div>
-        </div>
-        
-        <!-- 连接列表 -->
-        <div v-show="expandedOrganizations[org.id]" class="connection-items">
+          <!-- 组织名称 -->
           <div 
-            v-for="conn in org.connections" 
-            :key="conn.id"
-            class="connection-item"
-            @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+            class="organization-header" 
+            @click="toggleOrganization(org.id)"
+            @contextmenu.stop="showMenu($event, 'organization', org.id)"
           >
-            <div v-if="isEditing && editingItemId === conn.id" class="editing-container">
-              <input 
-                id="editing-input"
-                v-model="editingText" 
-                @blur="saveEditing" 
-                @keydown="handleKeyDown"
-                class="editing-input"
+            <div class="organization-name">
+              <img
+                :src="props.isDarkTheme ? CollectionNightIcon : CollectionDayIcon"
+                class="collection-icon"
               />
+              {{ org.name }}
             </div>
-            <div v-else class="connection-name">
-              <div 
-                class="connection-color-block" 
-                :style="{ backgroundColor: getConnectionColor(conn.id) }"
-              ></div>
-              {{ conn.name }}
+          </div>
+          
+          <!-- 连接列表 -->
+          <div v-show="expandedOrganizations[org.id]" class="connection-items">
+            <div 
+              v-for="conn in org.connections" 
+              :key="conn.id"
+              class="connection-item"
+              @dblclick="connectToServer(org.id, conn.id)"
+              @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+            >
+              <div class="connection-name">
+                <div 
+                  class="connection-color-block" 
+                  :style="{ backgroundColor: getConnectionColor(conn.id) }"
+                ></div>
+                {{ conn.name }}
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
     
+    <!-- 折叠状态下的垂直文字 -->
+    <div class="connection-vertical-label">
+      <span>连接管理</span>
+    </div>
+    
     <!-- 右键菜单 -->
     <div 
       v-if="showContextMenu" 
       class="context-menu"
+      :class="{ 'dark-menu': props.isDarkTheme }"
       :style="{ top: `${menuPosition.y}px`, left: `${menuPosition.x}px` }"
     >
       <!-- 空白区域菜单 -->
       <template v-if="menuType === 'area'">
-        <div class="menu-item" @click="createOrganization">
+        <div class="menu-item" @click="openCreateOrganizationDialog">
           <img
-            :src="isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon"
+            :src="props.isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon"
             class="plus-icon"
           />
           新建组织
@@ -368,23 +379,23 @@ onUnmounted(() => {
       
       <!-- 组织菜单 -->
       <template v-else-if="menuType === 'organization'">
-        <div class="menu-item" @click="editOrganization(selectedOrganizationId)">
+        <div class="menu-item" @click="openEditOrganizationDialog(selectedOrganizationId)">
           <img
-            :src="isDarkTheme ? EditNightIcon : EditDayIcon"
+            :src="props.isDarkTheme ? EditNightIcon : EditDayIcon"
             class="edit-icon"
           />
-          编辑组织名称
+          编辑组织
         </div>
-        <div class="menu-item" @click="createConnection(selectedOrganizationId)">
+        <div class="menu-item" @click="openCreateConnectionDialog(selectedOrganizationId)">
           <img
-            :src="isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon"
+            :src="props.isDarkTheme ? AddCollectionNightIcon : AddCollectionDayIcon"
             class="plus-icon"
           />
           新建连接
         </div>
         <div class="menu-item delete" @click="deleteOrganization(selectedOrganizationId)">
           <img
-            :src="isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+            :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
             class="delete-icon"
           />
           删除组织
@@ -393,22 +404,40 @@ onUnmounted(() => {
       
       <!-- 连接菜单 -->
       <template v-else-if="menuType === 'connection'">
-        <div class="menu-item">
+        <div class="menu-item" @click="connectToServer(selectedOrganizationId, selectedConnectionId)">
           <img
-            :src="isDarkTheme ? EditNightIcon : EditDayIcon"
-            class="edit-icon"
+            :src="props.isDarkTheme ? ConnectNightIcon : ConnectDayIcon"
+            class="connect-icon"
           />
           连接到服务器
         </div>
+        <div class="menu-item" @click="openEditConnectionDialog(selectedOrganizationId, selectedConnectionId)">
+          <img
+            :src="props.isDarkTheme ? EditNightIcon : EditDayIcon"
+            class="edit-icon"
+          />
+          编辑连接
+        </div>
         <div class="menu-item delete" @click="deleteConnection(selectedOrganizationId, selectedConnectionId)">
           <img
-            :src="isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+            :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
             class="delete-icon"
           />
           删除连接
         </div>
       </template>
     </div>
+    
+    <!-- 连接编辑对话框 -->
+    <ConnectDialog
+      v-model:visible="dialogVisible"
+      :edit-type="dialogType"
+      :organization-id="editingOrgId"
+      :connection-id="editingConnId"
+      :organizations="organizations"
+      @save="handleSaveForm"
+      @cancel="dialogVisible = false"
+    />
   </div>
 </template>
 
@@ -426,7 +455,7 @@ onUnmounted(() => {
   --separator-color: #e0e0e0;
 }
 
-:root .dark-theme {
+:root .dark-menu {
   --text-color: #ffffff;
   --text-color-light: #aaa;
   --section-bg-color: rgba(255, 255, 255, 0.05);
@@ -488,6 +517,7 @@ h3 {
 
 .collection-icon,
 .plus-icon,
+.connect-icon,
 .delete-icon,
 .edit-icon {
   width: 20px;
@@ -539,7 +569,7 @@ h3 {
 }
 
 /* 暗色主题下的菜单样式 */
-.dark-theme .context-menu {
+.dark-menu {
   background-color: #222;
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
@@ -561,7 +591,7 @@ h3 {
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.dark-theme .menu-item:not(:last-child) {
+.dark-menu .menu-item:not(:last-child) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -574,7 +604,7 @@ h3 {
   background-color: rgba(0, 0, 0, 0.07);
 }
 
-.dark-theme .menu-item:hover {
+.dark-menu .menu-item:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -597,18 +627,19 @@ h3 {
   color: var(--text-color);
 }
 
-.dark-theme .editing-input {
+.dark-menu .editing-input {
   background-color: rgba(30, 30, 30, 0.5);
 }
 
 /* 图标样式 */
-.dark-theme .folder-icon,
-.dark-theme .terminal-icon,
-.dark-theme .collection-icon,
-.dark-theme .plus-icon,
-.dark-theme .delete-icon,
-.dark-theme .edit-icon {
-  opacity: 0.9;
+.dark-menu .folder-icon,
+.dark-menu .terminal-icon,
+.dark-menu .collection-icon,
+.dark-menu .connect-icon,
+.dark-menu .plus-icon,
+.dark-menu .delete-icon,
+.dark-menu .edit-icon {
+  opacity: 1;
 }
 
 /* 确保夜间模式下分隔线可见 */
@@ -624,7 +655,7 @@ h3 {
   cursor: not-allowed;
 }
 
-.dark-theme .menu-item.disabled {
+.dark-menu .menu-item.disabled {
   opacity: 0.4;
 }
 
@@ -652,7 +683,123 @@ h3 {
   flex-shrink: 0;
 }
 
-.dark-theme .connection-color-block {
+.dark-menu .connection-color-block {
   box-shadow: 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+/* 空状态提示 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px;
+  color: var(--text-color-light);
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 40px;
+  margin-bottom: 10px;
+  opacity: 0.5;
+}
+
+.empty-state-text {
+  margin-bottom: 20px;
+}
+
+.create-button {
+  padding: 8px 15px;
+  background-color: #4d90fe;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.create-button:hover {
+  background-color: #3c78dc;
+}
+
+.dark-menu .create-button {
+  background-color: #1a73e8;
+}
+
+.dark-menu .create-button:hover {
+  background-color: #1967d2;
+}
+
+/* 右侧边栏折叠时隐藏连接管理内容 */
+.right-sidebar-collapsed .connection-manager-content {
+  display: none;
+}
+
+/* 折叠状态下的UI优化 */
+.right-sidebar-collapsed .connection-manager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+/* 垂直文字样式 */
+.connection-vertical-label {
+  display: none;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  white-space: nowrap;
+  padding: 15px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-color);
+  letter-spacing: 2px;
+  text-align: center;
+  user-select: none;
+  opacity: 0.8;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+/* 添加底部边框作为装饰 */
+.connection-vertical-label::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 20px;
+  height: 2px;
+  background-color: currentColor;
+  border-radius: 1px;
+  opacity: 0.6;
+  transition: width 0.3s ease, opacity 0.3s ease;
+}
+
+/* 悬停效果 */
+.connection-vertical-label:hover {
+  opacity: 1;
+  letter-spacing: 3px;
+}
+
+.connection-vertical-label:hover::after {
+  width: 28px;
+  opacity: 0.8;
+}
+
+/* 折叠状态下显示垂直文字 */
+.right-sidebar-collapsed .connection-vertical-label {
+  display: block;
+}
+
+/* 暗色主题下的垂直文字样式 */
+.dark-theme .connection-vertical-label {
+  color: var(--text-color-light);
+}
+
+.dark-theme .connection-vertical-label:hover {
+  color: white;
 }
 </style> 
