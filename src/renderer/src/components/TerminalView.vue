@@ -130,7 +130,7 @@ const setupResizeObserver = () => {
   
   // 创建新的ResizeObserver
   resizeObserver.value = new ResizeObserver((entries) => {
-    for (const entry of entries) {
+    for (const _entry of entries) {
       // 当容器大小变化时调整终端大小
       if (terminal.value && fitAddon.value) {
         fitAddon.value.fit()

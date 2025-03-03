@@ -7,7 +7,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Client } from 'ssh2'
 import * as pty from 'node-pty'
-import { ChildProcess, spawn } from 'child_process'
 
 // 定义连接配置的数据类型
 interface Connection {
@@ -530,11 +529,8 @@ app.whenReady().then(() => {
   // 确保连接配置文件已初始化并有效
   console.log('应用启动，初始化连接配置文件')
   
-  let configExists = false
-
   // 检查文件是否存在
   if (fs.existsSync(connectionsFilePath)) {
-    configExists = true
     console.log('配置文件已存在:', connectionsFilePath)
   } else {
     console.log('配置文件不存在，将创建空配置')
@@ -555,7 +551,7 @@ app.whenReady().then(() => {
     })
     
     // 保存连接
-    ipcMain.handle('save-connections', async (event, organizations) => {
+    ipcMain.handle('save-connections', async (_event, organizations) => {
       try {
         saveConnections(organizations)
         return { success: true }
