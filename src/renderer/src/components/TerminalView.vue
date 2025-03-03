@@ -31,6 +31,10 @@ const shellId = ref<string | null>(null)
 const isLocalTerminal = ref(false)
 const terminalId = ref<string | null>(null)
 const resizeObserver = ref<ResizeObserver | null>(null)
+// 添加变量跟踪是否是第一次显示
+const isInitialized = ref(false)
+// 添加变量跟踪可见性
+const isVisible = ref(true)
 
 // 从props接收连接信息和主题状态
 const props = defineProps<{
@@ -106,7 +110,9 @@ const initializeTerminal = () => {
   nextTick(() => {
     if (terminal.value && terminalElement.value) {
       terminal.value.open(terminalElement.value)
-      fitAddon.value?.fit()
+      isInitialized.value = true
+      // 调整终端大小
+      refreshTerminalSize()
       
       // 设置ResizeObserver监控终端容器大小变化
       setupResizeObserver()
@@ -132,17 +138,8 @@ const setupResizeObserver = () => {
   resizeObserver.value = new ResizeObserver((entries) => {
     for (const _entry of entries) {
       // 当容器大小变化时调整终端大小
-      if (terminal.value && fitAddon.value) {
-        fitAddon.value.fit()
-        
-        // 手动调整xterm-screen的宽度为100%
-        const xtermScreen = terminalElement.value?.querySelector('.xterm-screen') as HTMLElement
-        if (xtermScreen) {
-          xtermScreen.style.width = '100%'
-        }
-        
-        // 如果已连接，通知后端调整终端大小
-        handleResize()
+      if (isVisible.value && terminal.value && fitAddon.value) {
+        refreshTerminalSize()
       }
     }
   })
@@ -151,6 +148,38 @@ const setupResizeObserver = () => {
   if (terminalWrapper.value) {
     resizeObserver.value.observe(terminalWrapper.value)
   }
+}
+
+// 新增：刷新终端大小方法
+const refreshTerminalSize = () => {
+  if (!terminal.value || !fitAddon.value || !isVisible.value) return
+
+  nextTick(() => {
+    try {
+      // 确保终端元素可见并有正确的尺寸
+      if (terminalElement.value && 
+          terminalElement.value.offsetWidth > 0 && 
+          terminalElement.value.offsetHeight > 0 && 
+          fitAddon.value) {
+        
+        // 调整终端大小
+        fitAddon.value.fit()
+        
+        // 手动调整xterm-screen的宽度为100%
+        const xtermScreen = terminalElement.value.querySelector('.xterm-screen') as HTMLElement
+        if (xtermScreen) {
+          xtermScreen.style.width = '100%'
+        }
+        
+        // 通知后端调整终端大小
+        handleResize()
+        
+        console.log('Terminal size refreshed')
+      }
+    } catch (err) {
+      console.error('Error refreshing terminal size:', err)
+    }
+  })
 }
 
 // 销毁终端
@@ -325,10 +354,9 @@ const connectToLocalTerminal = async () => {
 
 // 处理终端大小调整
 const handleResize = () => {
-  if (!terminal.value || !fitAddon.value) return
+  if (!terminal.value || !fitAddon.value || !isVisible.value) return
   
   // 获取新的尺寸
-  fitAddon.value.fit()
   const cols = terminal.value.cols
   const rows = terminal.value.rows
   
@@ -390,7 +418,50 @@ watchEffect(() => {
 
 // 组件挂载时初始化终端
 onMounted(() => {
+  isVisible.value = true
   initializeTerminal()
+})
+
+// 监听可见性变化 (从v-show导致的父元素显示/隐藏)
+// 使用MutationObserver监视DOM变化
+onMounted(() => {
+  // 创建一个MutationObserver实例，用于观察DOM变化
+  const mutationObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+        const el = mutation.target as HTMLElement
+        // 检查元素是否可见 (通过检查display属性)
+        const isCurrentlyVisible = el.style.display !== 'none'
+        
+        // 如果可见性状态变化了
+        if (isVisible.value !== isCurrentlyVisible) {
+          isVisible.value = isCurrentlyVisible
+          
+          // 如果变为可见，并且已经初始化过
+          if (isVisible.value && isInitialized.value) {
+            console.log('Terminal became visible, refreshing size')
+            // 延迟一小段时间后刷新终端大小，确保DOM完全渲染
+            setTimeout(() => {
+              refreshTerminalSize()
+            }, 50)
+          }
+        }
+      }
+    }
+  })
+  
+  // 开始观察终端容器的父元素 (标签页内容容器)
+  if (terminalWrapper.value && terminalWrapper.value.parentElement) {
+    mutationObserver.observe(terminalWrapper.value.parentElement, {
+      attributes: true,
+      attributeFilter: ['style', 'class']
+    })
+  }
+  
+  // 在组件销毁时断开观察
+  onBeforeUnmount(() => {
+    mutationObserver.disconnect()
+  })
 })
 
 // 组件销毁前清理资源
