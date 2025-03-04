@@ -16,6 +16,7 @@ interface Connection {
   username: string
   password?: string
   privateKey?: string
+  privateKeyPath?: string
   description?: string
 }
 
@@ -63,6 +64,8 @@ const terminalWrapper = ref<HTMLElement | null>(null)
 const resizeObserver = ref<ResizeObserver | null>(null)
 // 是否可见
 const isVisible = ref(true)
+// 全局错误信息
+const errorMessage = ref('')
 
 // 用于追踪最后一次创建终端的时间，避免频繁创建
 const lastTerminalCreationTime = ref<number>(0);
@@ -399,30 +402,61 @@ const connectToSSH = async (tab: TerminalTab) => {
     // 显示连接中信息
     tab.terminal.write(`正在连接到 ${tab.connection.name} (${tab.connection.host}:${tab.connection.port})...\r\n`);
     
-    // 先建立SSH连接
-    const connectResult = await api.sshConnect(tab.connection);
-    if (!connectResult.success) {
-      throw new Error(connectResult.error || '连接失败');
-    }
+    // 再次进行对象清理，确保数据安全
+    const connectionData = {
+      id: tab.connection.id,
+      name: tab.connection.name,
+      host: tab.connection.host,
+      port: tab.connection.port,
+      username: tab.connection.username,
+      password: tab.connection.password || '',
+      privateKey: tab.connection.privateKey || ''
+    };
     
-    tab.connectionId = connectResult.id;
+    console.log('正在连接SSH服务器:', {
+      host: connectionData.host,
+      port: connectionData.port,
+      username: connectionData.username,
+      hasPassword: !!connectionData.password,
+      hasPrivateKey: !!connectionData.privateKey
+    });
+    
+    // 先建立SSH连接
+    try {
+      const connectResult = await api.sshConnect(connectionData);
+      if (!connectResult.success) {
+        throw new Error(connectResult.error || '连接失败');
+      }
+      
+      tab.connectionId = connectResult.id;
+      console.log('SSH连接成功, 连接ID:', tab.connectionId);
+    } catch (connectError: any) {
+      console.error('SSH连接阶段错误:', connectError);
+      throw new Error(`连接失败: ${connectError.message || '未知错误'}`);
+    }
     
     // 获取终端尺寸
     const cols = tab.terminal.cols;
     const rows = tab.terminal.rows;
     
     // 创建Shell会话
-    const shellResult = await api.sshCreateShell({
-      connectionId: tab.connectionId,
-      cols,
-      rows
-    });
-    
-    if (!shellResult.success) {
-      throw new Error(shellResult.error || '创建Shell失败');
+    try {
+      const shellResult = await api.sshCreateShell({
+        connectionId: tab.connectionId,
+        cols,
+        rows
+      });
+      
+      if (!shellResult.success) {
+        throw new Error(shellResult.error || '创建Shell失败');
+      }
+      
+      tab.shellId = shellResult.shellId;
+      console.log('SSH Shell创建成功, Shell ID:', tab.shellId);
+    } catch (shellError: any) {
+      console.error('创建Shell阶段错误:', shellError);
+      throw new Error(`创建Shell失败: ${shellError.message || '未知错误'}`);
     }
-    
-    tab.shellId = shellResult.shellId;
     
     // 连接成功
     tab.status = 'connected';
@@ -476,6 +510,15 @@ const connectToSSH = async (tab: TerminalTab) => {
     
     if (tab.terminal) {
       tab.terminal.writeln(`\r\n\x1b[1;31m错误: ${tab.errorMessage}\x1b[0m`);
+      
+      // 显示更详细的错误提示和可能的解决方案
+      tab.terminal.writeln('\r\n\x1b[33m可能的原因:\x1b[0m');
+      tab.terminal.writeln(' - 服务器地址或端口不正确');
+      tab.terminal.writeln(' - 用户名或密码错误');
+      tab.terminal.writeln(' - 私钥格式不正确');
+      tab.terminal.writeln(' - 服务器不可达或防火墙阻止');
+      tab.terminal.writeln(' - SSH服务未运行');
+      tab.terminal.writeln('\r\n\x1b[33m请检查连接信息并重试\x1b[0m');
     }
   }
 }
@@ -707,7 +750,42 @@ const addLocalTerminal = () => {
 
 // 添加SSH连接标签页
 const addSshConnection = (connection: Connection) => {
-  addTab(`${connection.name} (${connection.host})`, false, connection);
+  try {
+    // 使用JSON序列化再反序列化方式完全清理对象，消除所有可能的非序列化内容
+    const connectionStr = JSON.stringify({
+      id: connection.id || `conn_${Date.now()}`,
+      name: connection.name || '未命名连接',
+      host: connection.host || '',
+      port: connection.port || 22,
+      username: connection.username || '',
+      password: connection.password || '',
+      privateKey: connection.privateKey || '',
+      privateKeyPath: connection.privateKeyPath || '',
+      description: connection.description || ''
+    });
+    console.log('连接对象序列化预处理完成');
+    
+    // 使用完全序列化的对象创建标签页
+    const cleanConnection: Connection = JSON.parse(connectionStr);
+    console.log('创建干净的连接对象:', {
+      name: cleanConnection.name,
+      host: cleanConnection.host,
+      port: cleanConnection.port,
+      username: cleanConnection.username,
+      hasPassword: !!cleanConnection.password,
+      hasPrivateKey: !!cleanConnection.privateKey
+    });
+    
+    // 使用清理后的连接对象添加标签页
+    addTab(`${cleanConnection.name} (${cleanConnection.host})`, false, cleanConnection);
+    
+    // 清除可能存在的错误消息
+    errorMessage.value = '';
+  } catch (error: any) {
+    console.error('添加SSH连接时出错:', error);
+    // 设置全局错误消息
+    errorMessage.value = `无法建立SSH连接: ${error.message || '未知错误'}`;
+  }
 }
 
 // 是否有任何标签页
@@ -841,10 +919,24 @@ const handleCloseTab = (id: string, event: Event) => {
     console.error('handleCloseTab错误:', error);
   }
 };
+
+// 关闭错误提示
+const dismissError = () => {
+  errorMessage.value = '';
+}
 </script>
 
 <template>
   <div class="terminal-tabs-container">
+    <!-- 全局错误提示 -->
+    <div v-if="errorMessage" class="global-error-alert">
+      <div class="error-content">
+        <span class="error-icon">⚠️</span>
+        <span class="error-text">{{ errorMessage }}</span>
+        <button class="close-error" @click="dismissError">×</button>
+      </div>
+    </div>
+    
     <!-- 标签页导航 -->
     <div ref="tabsContainer" class="tabs-navigation">
       <div 
@@ -894,6 +986,62 @@ const handleCloseTab = (id: string, event: Event) => {
   border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* 全局错误提示样式 */
+.global-error-alert {
+  width: 100%;
+  background-color: #ff6b6b;
+  color: white;
+  padding: 10px 16px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  position: relative;
+  z-index: 5;
+  animation: slideIn 0.3s ease-out;
+}
+
+.dark-theme .global-error-alert {
+  background-color: #c62828;
+}
+
+.error-content {
+  display: flex;
+  align-items: center;
+}
+
+.error-icon {
+  margin-right: 10px;
+  font-size: 18px;
+}
+
+.error-text {
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.close-error {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  margin-left: 10px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.close-error:hover {
+  opacity: 1;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 .tabs-navigation {

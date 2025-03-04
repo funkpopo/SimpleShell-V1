@@ -173,60 +173,148 @@ async function getSystemInfo() {
 const activeConnections = new Map()
 
 // SSH会话管理
-ipcMain.handle('ssh:connect', async (_, connectionInfo) => {
+ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
+  let originalInfo: any = null;
   try {
-    console.log('收到SSH连接请求:', connectionInfo.name)
+    // 输出连接信息，但排除可能的敏感信息
+    console.log('收到SSH连接请求:', 
+      connectionInfo ? 
+      `${connectionInfo.name || 'unnamed'}@${connectionInfo.host || 'unknown'}:${connectionInfo.port || 'unknown'}` : 
+      '无效连接信息');
     
-    const { id, host, port, username, password, privateKey } = connectionInfo
+    // 首先对整个对象进行序列化和反序列化，确保没有非JSON类型数据
+    // 这可以排除所有无法序列化的数据类型
+    let safeConnectionInfo: any;
+    try {
+      // 保存原始数据用于调试
+      originalInfo = { ...connectionInfo };
+      
+      // 创建只有基本数据类型的安全连接对象
+      const connectionStr = JSON.stringify({
+        id: (connectionInfo?.id as string) || `conn_${Date.now()}`,
+        name: (connectionInfo?.name as string) || '未命名连接',
+        host: (connectionInfo?.host as string) || '',
+        port: (connectionInfo?.port as number) || 22,
+        username: (connectionInfo?.username as string) || '',
+        password: (connectionInfo?.password as string) || '',
+        privateKey: (connectionInfo?.privateKey as string) || ''
+      });
+      safeConnectionInfo = JSON.parse(connectionStr);
+      
+      console.log('连接信息预处理成功');
+    } catch (e: unknown) {
+      const serializeError = e as Error;
+      console.error('连接信息序列化失败:', serializeError);
+      console.log('原始连接信息:', originalInfo ? 
+        `${originalInfo.name || 'unnamed'}@${originalInfo.host || 'unknown'}:${originalInfo.port || 'unknown'}` : 
+        '无效连接信息');
+      return { success: false, error: '连接信息处理失败: ' + serializeError.message };
+    }
+    
+    // 安全地提取必要属性，使用空字符串或默认值防止undefined
+    const id = safeConnectionInfo.id || `conn_${Date.now()}`;
+    const host = safeConnectionInfo.host || '';
+    const port = safeConnectionInfo.port || 22;
+    const username = safeConnectionInfo.username || '';
+    const password = safeConnectionInfo.password || '';
+    const privateKey = safeConnectionInfo.privateKey || '';
+    
+    // 验证必要属性
+    if (!host) {
+      console.error('SSH连接信息缺失主机地址');
+      return { success: false, error: '连接信息不完整: 缺少主机地址' };
+    }
+    
+    if (!username) {
+      console.error('SSH连接信息缺失用户名');
+      return { success: false, error: '连接信息不完整: 缺少用户名' };
+    }
+    
+    if (!password && !privateKey) {
+      console.error('SSH连接信息缺失认证信息: 需要密码或私钥');
+      return { success: false, error: '连接信息不完整: 需要密码或私钥' };
+    }
     
     // 检查是否已经有活动连接
     if (activeConnections.has(id)) {
-      console.log('连接已存在，复用现有连接')
-      return { success: true, id }
+      console.log('连接已存在，复用现有连接:', id);
+      return { success: true, id };
     }
     
     // 创建新的SSH连接
-    const conn = new Client()
+    const conn = new Client();
     
     // 返回一个Promise，等待连接完成或失败
     return new Promise((resolve, reject) => {
-      const connectConfig: any = {
-        host,
-        port,
-        username,
-        readyTimeout: 10000, // 10秒超时
-      }
-      
-      // 添加认证方式
-      if (privateKey) {
-        connectConfig.privateKey = privateKey
-      } else if (password) {
-        connectConfig.password = password
-      }
-      
-      conn.on('ready', () => {
-        console.log(`SSH连接 ${id} 已就绪`)
+      try {
+        // 准备连接配置
+        const connectConfig: any = {
+          host,
+          port,
+          username,
+          readyTimeout: 10000, // 10秒超时
+        };
         
-        // 存储连接对象
-        activeConnections.set(id, {
-          connection: conn,
-          shells: new Map()
-        })
+        // 添加认证方式
+        if (privateKey) {
+          console.log('使用私钥认证');
+          connectConfig.privateKey = privateKey;
+        } else if (password) {
+          console.log('使用密码认证');
+          connectConfig.password = password;
+        }
         
-        resolve({ success: true, id })
-      })
-      
-      conn.on('error', (err) => {
-        console.error(`SSH连接 ${id} 错误:`, err)
-        reject({ success: false, error: err.message })
-      })
-      
-      // 开始连接
-      conn.connect(connectConfig)
-    })
+        // 设置事件处理器
+        conn.on('ready', () => {
+          console.log(`SSH连接 ${id} 已就绪`);
+          
+          // 存储连接对象
+          activeConnections.set(id, {
+            connection: conn,
+            shells: new Map()
+          });
+          
+          resolve({ success: true, id });
+        });
+        
+        conn.on('error', (err) => {
+          console.error(`SSH连接 ${id} 错误:`, err);
+          reject({ success: false, error: err.message || '连接错误' });
+        });
+        
+        conn.on('timeout', () => {
+          console.error(`SSH连接 ${id} 超时`);
+          reject({ success: false, error: '连接超时' });
+        });
+        
+        conn.on('close', (hadError) => {
+          console.log(`SSH连接 ${id} 关闭${hadError ? '(有错误)' : ''}`);
+          if (hadError) {
+            reject({ success: false, error: '连接被关闭(有错误)' });
+          }
+        });
+        
+        // 开始连接
+        console.log(`开始连接到 ${host}:${port}`);
+        conn.connect(connectConfig);
+      } catch (e: unknown) {
+        const connError = e as Error;
+        console.error('启动SSH连接过程时出错:', connError);
+        reject({ success: false, error: '启动连接失败: ' + connError.message });
+      }
+    }).catch(error => {
+      console.error('SSH连接Promise处理失败:', error);
+      return { success: false, error: error.error || error.message || '未知连接错误' };
+    });
   } catch (error: any) {
-    console.error('SSH连接失败:', error)
-    return { success: false, error: error.message || '连接失败' }
+    console.error('SSH连接处理时发生未捕获异常:', error);
+    console.log('原始连接信息:', originalInfo ? 
+      `${originalInfo.name || 'unnamed'}@${originalInfo.host || 'unknown'}:${originalInfo.port || 'unknown'}` : 
+      '无效连接信息');
+    return { 
+      success: false, 
+      error: '连接过程出现错误: ' + (error.message || '未知错误')
+    };
   }
 })
 
@@ -574,6 +662,46 @@ app.whenReady().then(() => {
     // 启动Windows Terminal
     ipcMain.handle('launch-windows-terminal', async () => {
       return { success: launchWindowsTerminal() }
+    })
+    
+    // 打开文件选择对话框
+    ipcMain.handle('open-file-dialog', async (_event, options) => {
+      try {
+        const { dialog } = require('electron')
+        const result = await dialog.showOpenDialog({
+          properties: ['openFile'],
+          filters: [
+            { name: '私钥文件', extensions: ['pem', 'key', 'ppk', '*'] }
+          ],
+          title: options?.title || '选择SSH私钥文件',
+          buttonLabel: options?.buttonLabel || '选择',
+          defaultPath: options?.defaultPath || app.getPath('home')
+        })
+        
+        if (result.canceled || result.filePaths.length === 0) {
+          return { canceled: true }
+        }
+        
+        // 读取选中的文件内容
+        const filePath = result.filePaths[0]
+        try {
+          const fileContent = fs.readFileSync(filePath, 'utf-8')
+          return {
+            canceled: false,
+            filePath,
+            fileContent
+          }
+        } catch (readError: any) {
+          return {
+            canceled: false,
+            filePath,
+            error: `无法读取文件内容: ${readError.message}`
+          }
+        }
+      } catch (error: any) {
+        console.error('打开文件对话框失败:', error)
+        return { canceled: true, error: error.message }
+      }
     })
   }
   

@@ -18,6 +18,11 @@ const api = {
     return await ipcRenderer.invoke('save-connections', organizations)
   },
   
+  // 打开文件选择对话框
+  openFileDialog: async (options?: { title?: string; buttonLabel?: string; defaultPath?: string }): Promise<any> => {
+    return await ipcRenderer.invoke('open-file-dialog', options)
+  },
+  
   // SSH连接相关
   sshConnect: async (connectionInfo: any): Promise<any> => {
     return await ipcRenderer.invoke('ssh:connect', connectionInfo)

@@ -15,6 +15,14 @@ declare interface API {
   closeTerminal: (options: { id: string }) => void;
   onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void;
   
+  // 文件操作相关方法
+  openFileDialog: (options?: { title?: string; buttonLabel?: string; defaultPath?: string }) => Promise<{
+    canceled: boolean;
+    filePath?: string;
+    fileContent?: string;
+    error?: string;
+  }>;
+  
   // 通用IPC调用
   invoke: (channel: string, ...args: any[]) => Promise<any>;
 }

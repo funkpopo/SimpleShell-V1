@@ -34,6 +34,7 @@ interface Connection {
   username: string
   password?: string
   privateKey?: string
+  privateKeyPath?: string
   description?: string
 }
 
@@ -332,8 +333,22 @@ const connectToServer = (orgId: string | null, connId: string | null) => {
     const conn = org.connections.find(c => c.id === connId)
     if (conn) {
       console.log('连接到服务器:', conn)
+      
+      // 创建一个干净的连接对象副本，避免结构化克隆错误
+      const cleanConnection = {
+        id: conn.id,
+        name: conn.name,
+        host: conn.host,
+        port: conn.port,
+        username: conn.username,
+        password: conn.password || '',
+        privateKey: conn.privateKey || '',
+        privateKeyPath: conn.privateKeyPath || '',
+        description: conn.description || ''
+      }
+      
       // 将连接信息发送到父组件
-      emit('connect-to-server', conn)
+      emit('connect-to-server', cleanConnection)
     }
   }
   closeMenu()
@@ -503,6 +518,7 @@ onUnmounted(() => {
       :organization-id="editingOrgId"
       :connection-id="editingConnId"
       :organizations="organizations"
+      :is-dark-theme="props.isDarkTheme"
       @save="handleSaveForm"
       @cancel="dialogVisible = false"
     />

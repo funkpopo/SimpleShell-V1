@@ -34,6 +34,7 @@ interface Connection {
   username: string
   password?: string
   privateKey?: string
+  privateKeyPath?: string
   description?: string
 }
 

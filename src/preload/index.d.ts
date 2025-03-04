@@ -74,6 +74,12 @@ interface API {
   getSystemInfo(): Promise<SystemInfo>
   loadConnections(): Promise<Organization[]>
   saveConnections(organizations: Organization[]): Promise<boolean>
+  openFileDialog(options?: { title?: string; buttonLabel?: string; defaultPath?: string }): Promise<{
+    canceled: boolean
+    filePath?: string
+    fileContent?: string
+    error?: string
+  }>
   sshConnect(connectionInfo: Connection): Promise<SSHConnectResult>
   sshCreateShell(params: { connectionId: string, cols: number, rows: number }): Promise<SSHShellResult>
   sshSendInput(params: { connectionId: string, shellId: string, data: string }): void

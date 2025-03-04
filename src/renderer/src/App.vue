@@ -365,6 +365,7 @@ onMounted(() => {
   flex-direction: column;
   overflow: visible;
   box-sizing: border-box;
+  z-index: 5;
 }
 
 .dark-theme .left-sidebar,
@@ -495,7 +496,7 @@ onMounted(() => {
   background-color: #a0a0a0;
   color: #333;
   transition: background-color 0.2s;
-  z-index: 1000;
+  z-index: 999;
 }
 
 .dark-theme .left-sidebar-toggle,
@@ -512,7 +513,7 @@ onMounted(() => {
 .right-sidebar-toggle {
   left: -10px;
   border-radius: 4px 0 0 4px;
-  z-index: 100;
+  z-index: 999;
 }
 
 /* 确保折叠状态下的右侧切换按钮能够正确显示 */
