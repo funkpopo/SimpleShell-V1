@@ -747,9 +747,9 @@ app.whenReady().then(() => {
   })
   
   ipcMain.on('terminal:input', (_, options) => {
-    const { id, data } = options
-    console.log(`接收到终端[${id}]输入请求`)
-    sendTerminalInput(options)
+    const { id } = options; // 只解构我们实际使用的id变量
+    console.log(`接收到终端[${id}]输入请求`);
+    sendTerminalInput(options);
   })
   
   ipcMain.on('terminal:resize', (_, options) => {
