@@ -32,9 +32,9 @@ const connectionsFilePath = is.dev
   : path.join(app.getPath('userData'), 'connections.json')
 
 // 输出环境信息
-console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
-console.log('连接配置文件路径:', connectionsFilePath)
-console.log('当前工作目录:', process.cwd())
+// console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
+// console.log('连接配置文件路径:', connectionsFilePath)
+// console.log('当前工作目录:', process.cwd())
 
 // 加载连接配置
 function loadConnections(): Organization[] {
@@ -43,7 +43,7 @@ function loadConnections(): Organization[] {
       const fileContent = fs.readFileSync(connectionsFilePath, 'utf-8')
       // 如果文件存在但为空或内容无效，返回空数组
       if (!fileContent.trim()) {
-        console.log('配置文件存在但为空，返回空数组')
+        // console.log('配置文件存在但为空，返回空数组')
         return []
       }
       
@@ -53,20 +53,20 @@ function loadConnections(): Organization[] {
         if (Array.isArray(parsed)) {
           return parsed
         } else {
-          console.warn('配置文件内容不是有效数组，返回空数组')
+          // console.warn('配置文件内容不是有效数组，返回空数组')
           return []
         }
       } catch (parseError) {
-        console.error('解析配置文件失败:', parseError)
+        // console.error('解析配置文件失败:', parseError)
         return []
       }
     }
   } catch (error) {
-    console.error('加载连接配置失败:', error)
+    // console.error('加载连接配置失败:', error)
   }
   
   // 如果文件不存在，返回空数组
-  console.log('配置文件不存在，返回空数组')
+  // console.log('配置文件不存在，返回空数组')
   return []
 }
 
@@ -82,36 +82,25 @@ function saveConnections(organizations: Organization[]): boolean {
     
     // 在开发环境中，额外打印路径信息
     if (is.dev) {
-      console.log('保存连接配置到:', connectionsFilePath)
+      // console.log('保存连接配置到:', connectionsFilePath)
       // 数据可能很大，只打印长度信息
-      console.log('保存数据:', Array.isArray(organizations) ? `${organizations.length}个组织` : '非数组')
-    }
-    
-    // 检查organizations是否为数组
-    if (!Array.isArray(organizations)) {
-      console.error('保存失败: organizations不是数组')
-      return false
-    }
-    
-    // 检查数组是否为空 - 允许空数组
-    if (organizations.length === 0) {
-      console.log('保存的是空数组配置 - 允许')
+      // console.log('保存数据:', Array.isArray(organizations) ? `${organizations.length}个组织` : '非数组')
     }
     
     // 以同步方式写入文件
     const jsonContent = JSON.stringify(organizations, null, 2)
     fs.writeFileSync(connectionsFilePath, jsonContent, { encoding: 'utf-8', flag: 'w' })
-    console.log('文件写入完成，内容长度:', jsonContent.length, '字节')
+    // console.log('文件写入完成，内容长度:', jsonContent.length, '字节')
     
     // 验证写入是否成功
     if (fs.existsSync(connectionsFilePath)) {
       const stats = fs.statSync(connectionsFilePath)
-      console.log('文件大小:', stats.size, '字节')
+      // console.log('文件大小:', stats.size, '字节')
       
       // 验证内容是否正确写入
       const readContent = fs.readFileSync(connectionsFilePath, 'utf-8')
       const success = readContent.length > 0 && readContent === jsonContent
-      console.log('内容验证:', success ? '成功' : '失败')
+      // console.log('内容验证:', success ? '成功' : '失败')
       
       // 内容验证不再做额外处理，避免无限循环
     }
@@ -221,17 +210,14 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
     
     // 验证必要属性
     if (!host) {
-      console.error('SSH连接信息缺失主机地址');
       return { success: false, error: '连接信息不完整: 缺少主机地址' };
     }
     
     if (!username) {
-      console.error('SSH连接信息缺失用户名');
       return { success: false, error: '连接信息不完整: 缺少用户名' };
     }
     
     if (!password && !privateKey) {
-      console.error('SSH连接信息缺失认证信息: 需要密码或私钥');
       return { success: false, error: '连接信息不完整: 需要密码或私钥' };
     }
     
