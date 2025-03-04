@@ -7,6 +7,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { Client } from 'ssh2'
 import * as pty from 'node-pty'
+import SftpClient from 'ssh2-sftp-client'
 
 // 定义连接配置的数据类型
 interface Connection {
@@ -161,6 +162,9 @@ async function getSystemInfo() {
 // 记录所有活动的SSH连接
 const activeConnections = new Map()
 
+// 记录所有活动的SFTP连接
+const activeSftpConnections = new Map<string, any>()
+
 // SSH会话管理
 ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
   let originalInfo: any = null;
@@ -231,7 +235,7 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
     const conn = new Client();
     
     // 返回一个Promise，等待连接完成或失败
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
         // 准备连接配置
         const connectConfig: any = {
@@ -251,16 +255,77 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
         }
         
         // 设置事件处理器
-        conn.on('ready', () => {
+        conn.on('ready', async () => {
           console.log(`SSH连接 ${id} 已就绪`);
           
-          // 存储连接对象
-          activeConnections.set(id, {
-            connection: conn,
-            shells: new Map()
-          });
-          
-          resolve({ success: true, id });
+          try {
+            // 创建SFTP连接
+            const sftp = new SftpClient()
+            
+            // 设置更长的超时时间
+            const sftpConfig = {
+              host: connectionInfo.host,
+              port: connectionInfo.port,
+              username: connectionInfo.username,
+              password: connectionInfo.password,
+              privateKey: connectionInfo.privateKey,
+              readyTimeout: 20000,
+              retries: 3,
+              retry_factor: 2,
+              retry_minTimeout: 2000
+            }
+            
+            console.log('开始SFTP连接...')
+            await sftp.connect(sftpConfig)
+            console.log('SFTP连接成功')
+
+            // 存储连接对象
+            activeConnections.set(id, {
+              connection: conn,
+              shells: new Map()
+            });
+            
+            // 存储SFTP连接
+            activeSftpConnections.set(id, sftp)
+            console.log('已存储SFTP连接，ID:', id)
+            console.log('当前活动SFTP连接数:', activeSftpConnections.size)
+
+            // 验证SFTP连接是否可用
+            try {
+              console.log('测试SFTP连接...')
+              const testList = await sftp.list('/')
+              console.log('SFTP连接测试成功，可以列出根目录')
+              
+              // 只有在SFTP连接测试成功后才返回成功
+              resolve({ success: true, id });
+            } catch (testError: any) {
+              console.error('SFTP连接测试失败:', testError)
+              // 清理SFTP连接
+              try {
+                await sftp.end()
+                activeSftpConnections.delete(id)
+              } catch (cleanupError) {
+                console.error('清理SFTP连接失败:', cleanupError)
+              }
+              resolve({ 
+                success: true, 
+                id,
+                warning: `SFTP连接失败: ${testError.message || '未知错误'}`
+              });
+            }
+          } catch (error: any) {
+            console.error('SFTP连接失败:', error);
+            // 即使SFTP连接失败，我们仍然保持SSH连接
+            activeConnections.set(id, {
+              connection: conn,
+              shells: new Map()
+            });
+            resolve({ 
+              success: true, 
+              id,
+              warning: `SFTP连接失败: ${error.message || '未知错误'}`
+            });
+          }
         });
         
         conn.on('error', (err) => {
@@ -293,14 +358,8 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
       return { success: false, error: error.error || error.message || '未知连接错误' };
     });
   } catch (error: any) {
-    console.error('SSH连接处理时发生未捕获异常:', error);
-    console.log('原始连接信息:', originalInfo ? 
-      `${originalInfo.name || 'unnamed'}@${originalInfo.host || 'unknown'}:${originalInfo.port || 'unknown'}` : 
-      '无效连接信息');
-    return { 
-      success: false, 
-      error: '连接过程出现错误: ' + (error.message || '未知错误')
-    };
+    console.error('SSH/SFTP连接失败:', error);
+    return { success: false, error: error.message };
   }
 })
 
@@ -406,22 +465,31 @@ ipcMain.on('ssh:close-shell', (_, { connectionId, shellId }) => {
 
 // 关闭连接
 ipcMain.on('ssh:disconnect', (_, { connectionId }) => {
-  try {
-    const connInfo = activeConnections.get(connectionId)
-    if (!connInfo) return
-    
-    // 关闭所有Shell
-    for (const stream of connInfo.shells.values()) {
-      stream.end()
+  (async () => {
+    try {
+      // 断开SFTP连接
+      const sftp = activeSftpConnections.get(connectionId)
+      if (sftp) {
+        await sftp.end()
+        activeSftpConnections.delete(connectionId)
+      }
+
+      const connInfo = activeConnections.get(connectionId)
+      if (!connInfo) return
+      
+      // 关闭所有Shell
+      for (const stream of connInfo.shells.values()) {
+        stream.end()
+      }
+      
+      // 关闭连接
+      connInfo.connection.end()
+      activeConnections.delete(connectionId)
+      console.log(`SSH连接 ${connectionId} 已关闭`)
+    } catch (error) {
+      console.error('断开连接失败:', error)
     }
-    
-    // 关闭连接
-    connInfo.connection.end()
-    activeConnections.delete(connectionId)
-    console.log(`SSH连接 ${connectionId} 已关闭`)
-  } catch (error) {
-    console.error('关闭连接失败:', error)
-  }
+  })()
 })
 
 //==============================
@@ -687,6 +755,118 @@ app.whenReady().then(() => {
       } catch (error: any) {
         console.error('打开文件对话框失败:', error)
         return { canceled: true, error: error.message }
+      }
+    })
+
+    // SFTP相关处理程序
+    ipcMain.handle('sftp:readDir', async (_, { connectionId, path }) => {
+      try {
+        console.log('尝试读取目录，连接ID:', connectionId)
+        console.log('当前活动SFTP连接:', Array.from(activeSftpConnections.keys()))
+        
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          console.error('SFTP连接不存在，ID:', connectionId)
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        console.log('开始读取目录:', path)
+        const list = await sftp.list(path)
+        console.log('目录读取成功，文件数量:', list.length)
+
+        const files = list.map(item => ({
+          name: item.name,
+          type: item.type === 'd' ? 'directory' : 'file',
+          size: item.size,
+          modifyTime: item.modifyTime,
+          permissions: item.rights.user + item.rights.group + item.rights.other,
+          owner: item.owner,
+          group: item.group
+        }))
+
+        return { success: true, files }
+      } catch (error: any) {
+        console.error('读取目录失败:', error)
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('sftp:downloadFile', async (_, { connectionId, remotePath }) => {
+      try {
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        // 打开保存文件对话框
+        const { dialog } = require('electron')
+        const result = await dialog.showSaveDialog({
+          defaultPath: path.basename(remotePath)
+        })
+
+        if (result.canceled || !result.filePath) {
+          return { success: false, error: '用户取消下载' }
+        }
+
+        await sftp.fastGet(remotePath, result.filePath)
+        return { success: true }
+      } catch (error: any) {
+        console.error('下载文件失败:', error)
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('sftp:uploadFile', async (_, { connectionId, localPath, remotePath }) => {
+      try {
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        const fileName = path.basename(localPath)
+        const remoteFilePath = remotePath === '/' ? `/${fileName}` : `${remotePath}/${fileName}`
+
+        await sftp.fastPut(localPath, remoteFilePath)
+        return { success: true }
+      } catch (error: any) {
+        console.error('上传文件失败:', error)
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('sftp:mkdir', async (_, { connectionId, path }) => {
+      try {
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        await sftp.mkdir(path)
+        return { success: true }
+      } catch (error: any) {
+        console.error('创建目录失败:', error)
+        return { success: false, error: error.message }
+      }
+    })
+
+    ipcMain.handle('sftp:delete', async (_, { connectionId, path }) => {
+      try {
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        // 先检查是文件还是目录
+        const stat = await sftp.stat(path)
+        if (stat.isDirectory) {
+          await sftp.rmdir(path, true) // true表示递归删除
+        } else {
+          await sftp.delete(path)
+        }
+        return { success: true }
+      } catch (error: any) {
+        console.error('删除失败:', error)
+        return { success: false, error: error.message }
       }
     })
   }

@@ -8,6 +8,7 @@ import SystemMonitor from './components/SystemMonitor.vue'
 import ConnectionManager from './components/ConnectionManager.vue'
 import Welcome from './components/Welcome.vue'
 import TerminalView from './components/TerminalView.vue'
+import FileManager from './components/FileManager.vue'
 
 // 定义TerminalView组件实例的类型
 interface TerminalViewInstance {
@@ -35,9 +36,12 @@ const toggleSettings = () => {
 
 // 左侧边栏状态
 const isLeftSidebarExpanded = ref(true)
-const sidebarWidth = ref(250)
-const lastSidebarWidth = ref(250)
+const sidebarWidth = ref(300)
+const lastSidebarWidth = ref(300)
 const isDragging = ref(false)
+
+// 当前活动的连接ID
+const activeConnectionId = ref<string | null>(null)
 
 // 右侧边栏状态
 const isRightSidebarExpanded = ref(true)
@@ -181,20 +185,36 @@ const handleOpenLocalTerminal = () => {
 }
 
 // 处理SSH连接请求
-const handleConnectToServer = (connection: any) => {
+const handleConnectToServer = async (connection: any) => {
+  console.log('处理SSH连接请求:', connection.id)
+  
+  // 先清除旧的连接ID
+  activeConnectionId.value = null
+  
   if (!TerminalViewRef.value) {
-    // 如果TerminalViewRef还未初始化，先将hasConnections设为true，
-    // 这会激活TerminalView组件，然后在下一个tick中再调用addSshConnection
     hasConnections.value = true
-    setTimeout(() => {
-      if (TerminalViewRef.value) {
-        TerminalViewRef.value.addSshConnection(connection)
-      }
-    }, 0)
+    await new Promise<void>((resolve) => {
+      setTimeout(async () => {
+        if (TerminalViewRef.value) {
+          try {
+            await TerminalViewRef.value.addSshConnection(connection)
+            console.log('SSH连接成功，设置活动连接ID:', connection.id)
+            activeConnectionId.value = connection.id
+          } catch (error) {
+            console.error('SSH连接失败:', error)
+          }
+        }
+        resolve()
+      }, 0)
+    })
   } else {
-    // TerminalView已经初始化，直接调用addSshConnection
-    TerminalViewRef.value.addSshConnection(connection)
-    hasConnections.value = true
+    try {
+      await TerminalViewRef.value.addSshConnection(connection)
+      console.log('SSH连接成功，设置活动连接ID:', connection.id)
+      activeConnectionId.value = connection.id
+    } catch (error) {
+      console.error('SSH连接失败:', error)
+    }
   }
 }
 
@@ -229,6 +249,17 @@ onMounted(() => {
       <div class="left-sidebar-content">
         <transition name="fade-slide">
           <div v-show="isLeftSidebarExpanded" class="left-sidebar-items">
+            <!-- 文件管理器 -->
+            <FileManager
+              v-if="activeConnectionId"
+              :connection-id="activeConnectionId"
+              :is-dark-theme="isDarkTheme"
+              key="file-manager"
+            />
+            <!-- 未连接时的提示 -->
+            <div v-else class="no-connection-message">
+              <p>请先连接到服务器以查看文件</p>
+            </div>
           </div>
         </transition>
       </div>
@@ -539,7 +570,10 @@ onMounted(() => {
 }
 
 .left-sidebar-items {
-  padding: 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .right-sidebar-items {
@@ -656,6 +690,30 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.no-connection-message {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-color-light);
+  font-size: 14px;
+}
+
+.dark-theme .no-connection-message {
+  color: #888;
+}
+
+/* 调整左侧边栏最小宽度 */
+.left-sidebar {
+  min-width: 300px;
+}
+
+/* 确保文件管理器占满可用空间 */
+.left-sidebar-content {
+  flex: 1;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

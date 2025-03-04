@@ -25,6 +25,41 @@ declare interface API {
   
   // 通用IPC调用
   invoke: (channel: string, ...args: any[]) => Promise<any>;
+
+  // SFTP相关方法
+  sftpReadDir: (params: { connectionId: string; path: string }) => Promise<{
+    success: boolean;
+    files?: Array<{
+      name: string;
+      type: 'file' | 'directory';
+      size: number;
+      modifyTime: string;
+      permissions: string;
+      owner: string;
+      group: string;
+    }>;
+    error?: string;
+  }>;
+  
+  sftpDownloadFile: (params: { connectionId: string; remotePath: string }) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  
+  sftpUploadFile: (params: { connectionId: string; localPath: string; remotePath: string }) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  
+  sftpMkdir: (params: { connectionId: string; path: string }) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  
+  sftpDelete: (params: { connectionId: string; path: string }) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 interface Window {

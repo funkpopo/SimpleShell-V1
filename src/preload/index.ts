@@ -131,7 +131,28 @@ const api = {
   // 通用IPC调用方法
   invoke: async (channel: string, ...args: any[]): Promise<any> => {
     return await ipcRenderer.invoke(channel, ...args)
-  }
+  },
+  
+  // SFTP相关方法
+  sftpReadDir: async (params: { connectionId: string; path: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:readDir', params)
+  },
+  
+  sftpDownloadFile: async (params: { connectionId: string; remotePath: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:downloadFile', params)
+  },
+  
+  sftpUploadFile: async (params: { connectionId: string; localPath: string; remotePath: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:uploadFile', params)
+  },
+  
+  sftpMkdir: async (params: { connectionId: string; path: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:mkdir', params)
+  },
+  
+  sftpDelete: async (params: { connectionId: string; path: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:delete', params)
+  },
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
