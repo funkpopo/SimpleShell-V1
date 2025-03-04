@@ -385,7 +385,11 @@ const localTerminals = new Map<string, {
 async function createLocalTerminal(options: { cols: number; rows: number }): Promise<{ success: boolean; id?: string; error?: string }> {
   try {
     const { cols, rows } = options
-    const id = Date.now().toString()
+    // 使用更独特的ID，确保每次创建都是唯一的
+    const id = `term_${Date.now()}_${Math.floor(Math.random() * 10000)}`
+    
+    console.log(`创建新本地终端会话，ID: ${id}, 列: ${cols}, 行: ${rows}`)
+    console.log(`当前活跃终端数量: ${localTerminals.size}`)
     
     // 确定要使用的Shell
     let shell: string
@@ -406,7 +410,7 @@ async function createLocalTerminal(options: { cols: number; rows: number }): Pro
       args = ['-l'] // 作为登录shell启动
     }
     
-    console.log(`启动本地终端: ${shell}`)
+    console.log(`启动本地终端[${id}]: ${shell}`)
     
     // 创建伪终端
     const terminalProcess = pty.spawn(shell, args, {
@@ -422,7 +426,8 @@ async function createLocalTerminal(options: { cols: number; rows: number }): Pro
       pty: terminalProcess
     })
     
-    console.log(`本地终端 ${id} 已创建`)
+    console.log(`本地终端 ${id} 已创建，当前活跃终端数量: ${localTerminals.size}`)
+    console.log(`当前所有终端ID: ${Array.from(localTerminals.keys()).join(', ')}`)
     
     return { success: true, id }
   } catch (error: any) {
@@ -463,6 +468,8 @@ function resizeTerminal(options: { id: string; cols: number; rows: number }): vo
 function closeTerminal(options: { id: string }): void {
   const { id } = options
   
+  console.log(`准备关闭本地终端，ID: ${id}`)
+  
   if (localTerminals.has(id)) {
     const terminal = localTerminals.get(id)
     if (terminal && terminal.pty) {
@@ -473,8 +480,11 @@ function closeTerminal(options: { id: string }): void {
         console.error('关闭终端失败:', error)
       } finally {
         localTerminals.delete(id)
+        console.log(`终端 ${id} 已从列表中移除，剩余终端数量: ${localTerminals.size}`)
       }
     }
+  } else {
+    console.log(`找不到终端 ${id}，可能已被关闭`)
   }
 }
 
@@ -571,34 +581,58 @@ app.whenReady().then(() => {
 
   // 本地终端IPC处理
   ipcMain.handle('terminal:create', async (_, options) => {
-    console.log('收到创建本地终端请求')
+    console.log('收到创建本地终端请求，参数:', options)
     const result = await createLocalTerminal(options)
     
     if (result.success && result.id) {
       // 设置数据接收回调
+      console.log(`为终端 ${result.id} 设置数据回调...`)
       const terminalInfo = localTerminals.get(result.id)
       if (terminalInfo && terminalInfo.pty) {
         terminalInfo.pty.onData((data: string) => {
           const win = BrowserWindow.getFocusedWindow()
           if (win) {
-            win.webContents.send('terminal:data', { id: result.id, data })
+            // 发送数据到渲染进程，使用明确的终端ID作为消息通道
+            win.webContents.send('terminal:data', { 
+              id: result.id, 
+              data 
+            })
+            // 调试输出数据流向
+            if (process.env.NODE_ENV === 'development') {
+              const shortData = data.length > 20 ? data.substring(0, 20) + '...' : data
+              console.log(`终端[${result.id}]发送数据: ${shortData.replace(/\n/g, '\\n')}`)
+            }
+          } else {
+            console.log(`终端[${result.id}]数据无法发送：没有找到窗口`)
           }
         })
+        
+        console.log(`为终端 ${result.id} 设置了数据回调，准备返回结果`)
+      } else {
+        console.error(`无法为终端 ${result.id} 设置数据回调：找不到终端信息`)
       }
+    } else {
+      console.error('创建终端失败:', result.error)
     }
     
     return result
   })
   
   ipcMain.on('terminal:input', (_, options) => {
+    const { id, data } = options
+    console.log(`接收到终端[${id}]输入请求`)
     sendTerminalInput(options)
   })
   
   ipcMain.on('terminal:resize', (_, options) => {
+    const { id, cols, rows } = options
+    console.log(`接收到终端[${id}]调整大小请求: ${cols}x${rows}`)
     resizeTerminal(options)
   })
   
   ipcMain.on('terminal:close', (_, options) => {
+    const { id } = options
+    console.log(`接收到终端[${id}]关闭请求`)
     closeTerminal(options)
   })
 

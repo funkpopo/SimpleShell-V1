@@ -85,12 +85,42 @@ const api = {
     }
   },
   
-  onTerminalData: (callback: (data: any) => void): () => void => {
-    const listener = (_: any, data: any) => callback(data)
-    ipcRenderer.on('terminal:data', listener)
+  // 终端数据监听
+  onTerminalData: (callback: (data: any) => void): (() => void) => {
+    // 为每个回调创建唯一标识符，用于调试
+    const callbackId = Date.now().toString() + Math.floor(Math.random() * 1000);
+    
+    console.log(`准备注册终端数据监听器 ID: ${callbackId}`);
+    
+    const listener = (_: any, data: any) => {
+      if (data && data.id) {
+        // 验证终端ID格式
+        if (typeof data.id === 'string' && data.id.startsWith('term_')) {
+          console.log(`监听器[${callbackId}]收到终端[${data.id}]数据`);
+          
+          // 调用回调前检查数据完整性
+          if (data.data && typeof data.data === 'string') {
+            callback(data);
+          } else {
+            console.error(`监听器[${callbackId}]收到的终端[${data.id}]数据无效:`, typeof data.data);
+          }
+        } else {
+          console.warn(`监听器[${callbackId}]收到非标准格式的终端ID[${data.id}]`);
+          callback(data); // 仍然传递数据以兼容旧格式
+        }
+      } else {
+        console.error(`监听器[${callbackId}]收到无效的终端数据:`, data);
+      }
+    };
+    
+    ipcRenderer.on('terminal:data', listener);
+    console.log(`已注册终端数据监听器: ${callbackId}`);
+    
     return () => {
-      ipcRenderer.removeListener('terminal:data', listener)
-    }
+      console.log(`准备移除终端数据监听器: ${callbackId}`);
+      ipcRenderer.removeListener('terminal:data', listener);
+      console.log(`已移除终端数据监听器: ${callbackId}`);
+    };
   },
   
   // 通用IPC调用方法

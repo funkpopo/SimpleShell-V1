@@ -6,12 +6,14 @@ import SettingsNightIcon from './assets/settings-night.svg'
 import SettingsDayIcon from './assets/settings-day.svg'
 import SystemMonitor from './components/SystemMonitor.vue'
 import ConnectionManager from './components/ConnectionManager.vue'
-import MainContent from './components/MainContent.vue'
+import Welcome from './components/Welcome.vue'
+import TerminalView from './components/TerminalView.vue'
 
-// 定义MainContent组件实例的类型
-interface MainContentInstance {
+// 定义TerminalView组件实例的类型
+interface TerminalViewInstance {
   addLocalTerminal: () => void
   addSshConnection: (connection: any) => void
+  hasAnyTabs: boolean
 }
 
 // 主题状态
@@ -19,6 +21,11 @@ const isDarkTheme = ref(true)
 const toggleTheme = () => {
   isDarkTheme.value = !isDarkTheme.value
 }
+
+// 连接状态
+const hasConnections = ref(false)
+// 是否使用本地终端模式
+const isLocalTerminalMode = ref(false)
 
 // 设置状态
 const isSettingsExpanded = ref(false)
@@ -131,14 +138,63 @@ const handleRightSplitMouseUp = () => {
   document.removeEventListener('mouseup', handleRightSplitMouseUp)
 }
 
-// 获取MainContent组件的引用
-const mainContentRef = ref<MainContentInstance | null>(null)
+// 获取TerminalView组件的引用
+const TerminalViewRef = ref<TerminalViewInstance | null>(null)
 
-// 处理连接请求
+// 处理标签页变化
+const handleTabsChange = (hasTabs: boolean) => {
+  hasConnections.value = hasTabs
+}
+
+// 处理本地终端请求
+const handleOpenLocalTerminal = () => {
+  console.log('打开本地终端请求');
+  
+  // 检查是否已经有终端标签页
+  if (hasConnections.value && TerminalViewRef.value?.hasAnyTabs) {
+    console.log('已有终端存在，直接添加新标签页');
+    TerminalViewRef.value.addLocalTerminal();
+    return;
+  }
+  
+  // 首次创建终端 - 先添加标记，防止组件onMounted时重复创建
+  console.log('首次创建终端，设置本地终端模式');
+  // 添加正在创建的标记，防止TerminalView的onMounted钩子重复创建
+  window.localStorage.setItem('terminal_creating', 'true');
+  
+  isLocalTerminalMode.value = true;
+  hasConnections.value = true;
+  
+  // 确保TerminalView组件已加载并初始化后再创建终端
+  setTimeout(() => {
+    if (TerminalViewRef.value) {
+      console.log('TerminalView组件已初始化，创建新的本地终端标签页');
+      TerminalViewRef.value.addLocalTerminal();
+      // 创建后清除标记
+      window.localStorage.removeItem('terminal_creating');
+    } else {
+      console.warn('TerminalView组件未初始化，无法创建本地终端标签页');
+      // 清除标记，避免残留
+      window.localStorage.removeItem('terminal_creating');
+    }
+  }, 50); // 给予足够的时间让组件挂载和初始化
+}
+
+// 处理SSH连接请求
 const handleConnectToServer = (connection: any) => {
-  if (mainContentRef.value) {
-    // 创建新的SSH终端标签页
-    mainContentRef.value.addSshConnection(connection)
+  if (!TerminalViewRef.value) {
+    // 如果TerminalViewRef还未初始化，先将hasConnections设为true，
+    // 这会激活TerminalView组件，然后在下一个tick中再调用addSshConnection
+    hasConnections.value = true
+    setTimeout(() => {
+      if (TerminalViewRef.value) {
+        TerminalViewRef.value.addSshConnection(connection)
+      }
+    }, 0)
+  } else {
+    // TerminalView已经初始化，直接调用addSshConnection
+    TerminalViewRef.value.addSshConnection(connection)
+    hasConnections.value = true
   }
 }
 
@@ -152,8 +208,8 @@ onMounted(() => {
     }
     
     // Alt+L 打开新的本地终端
-    if (e.altKey && e.key === 'l' && mainContentRef.value) {
-      mainContentRef.value.addLocalTerminal()
+    if (e.altKey && e.key === 'l') {
+      handleOpenLocalTerminal()
     }
   })
 })
@@ -199,10 +255,23 @@ onMounted(() => {
     </div>
 
     <!-- 主要内容区域 -->
-    <MainContent
-      ref="mainContentRef"
-      :is-dark-theme="isDarkTheme"
-    />
+    <div class="main-area">
+      <!-- 没有连接时显示欢迎页 -->
+      <Welcome 
+        v-if="!hasConnections" 
+        :is-dark-theme="isDarkTheme"
+        @open-local-terminal="handleOpenLocalTerminal"
+      />
+      
+      <!-- 有连接时显示终端内容 -->
+      <TerminalView
+        v-else
+        ref="TerminalViewRef"
+        :is-dark-theme="isDarkTheme"
+        :is-local-mode="isLocalTerminalMode"
+        @tabs-change="handleTabsChange"
+      />
+    </div>
 
     <!-- 右侧边栏 -->
     <div
@@ -273,6 +342,12 @@ onMounted(() => {
 .app-container.dark-theme {
   background-color: #1a1a1a;
   color: #ffffff;
+}
+
+.main-area {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
 }
 
 .left-sidebar,
@@ -574,13 +649,9 @@ onMounted(() => {
 }
 
 /* 确保主内容区域填充可用空间 */
-:deep(MainContent) {
+.main-area {
   flex: 1;
   min-width: 0;
-}
-
-/* 确保主内容容器内部也能自适应宽度 */
-:deep(.main-content-container) {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
