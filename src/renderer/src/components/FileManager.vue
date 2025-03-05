@@ -1,6 +1,6 @@
 # 创建新文件
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -21,6 +21,8 @@ const props = defineProps<{
 
 // 当前路径
 const currentPath = ref('/')
+// 路径输入框引用
+const pathInputRef = ref<HTMLInputElement | null>(null)
 // 文件列表
 const fileList = ref<FileItem[]>([])
 // 加载状态
@@ -32,6 +34,15 @@ const selectedFiles = ref<Set<string>>(new Set())
 // 排序方式
 const sortBy = ref<'name' | 'size' | 'modifyTime'>('name')
 const sortOrder = ref<'asc' | 'desc'>('asc')
+// 右键菜单状态
+const showContextMenu = ref(false)
+const menuPosition = ref({ x: 0, y: 0 })
+const contextMenuTarget = ref<'file' | 'directory' | 'background'>('background')
+const clickedItem = ref<string | null>(null)
+// 高亮显示的项目
+const highlightedItem = ref<string | null>(null)
+// 加载超时时间（毫秒）
+const LOADING_TIMEOUT = 15000 // 增加到15秒
 
 // 格式化文件大小
 const formatFileSize = (size: number): string => {
@@ -60,6 +71,14 @@ const loadCurrentDirectory = async () => {
       return
     }
     
+    // 清除之前的选中和高亮状态
+    selectedFiles.value.clear()
+    
+    // 添加加载超时控制
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      setTimeout(() => reject(new Error('加载目录超时，请稍后再试')), LOADING_TIMEOUT)
+    })
+    
     // 添加重试机制
     let retryCount = 0;
     const maxRetries = 3;
@@ -67,14 +86,24 @@ const loadCurrentDirectory = async () => {
     
     while (retryCount < maxRetries) {
       try {
-        const result = await window.api.sftpReadDir({
-          connectionId: props.connectionId,
-          path: currentPath.value
-        })
+        // 使用Promise.race在超时和正常请求之间竞争
+        const result = await Promise.race([
+          window.api.sftpReadDir({
+            connectionId: props.connectionId,
+            path: currentPath.value
+          }),
+          timeoutPromise
+        ]) as any
         
         if (result.success && result.files) {
           console.log('目录加载成功，文件数量:', result.files.length)
           fileList.value = result.files as FileItem[]
+          
+          // 如果存在高亮项，滚动到该项
+          if (highlightedItem.value) {
+            await scrollToHighlightedItem()
+          }
+          
           return // 成功后直接返回
         } else {
           console.error(`目录加载失败 (尝试 ${retryCount + 1}/${maxRetries}):`, result.error)
@@ -98,6 +127,22 @@ const loadCurrentDirectory = async () => {
   }
 }
 
+// 滚动到高亮显示的项目
+const scrollToHighlightedItem = async () => {
+  await nextTick()
+  if (highlightedItem.value) {
+    const highlightedElement = document.querySelector(`.file-list-row[data-name="${highlightedItem.value}"]`)
+    if (highlightedElement) {
+      highlightedElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      
+      // 3秒后取消高亮
+      setTimeout(() => {
+        highlightedItem.value = null
+      }, 3000)
+    }
+  }
+}
+
 // 进入目录
 const enterDirectory = async (dirName: string) => {
   const newPath = currentPath.value === '/' 
@@ -105,6 +150,42 @@ const enterDirectory = async (dirName: string) => {
     : `${currentPath.value}/${dirName}`
   
   currentPath.value = newPath
+}
+
+// 通过路径输入框跳转
+const navigateToPath = (event: Event) => {
+  event.preventDefault()
+  
+  if (!pathInputRef.value) return
+  
+  let inputPath = pathInputRef.value.value.trim()
+  
+  // 格式化路径
+  if (!inputPath.startsWith('/')) {
+    inputPath = `/${inputPath}`
+  }
+  
+  // 如果路径最后有斜杠且不是根路径，则删除
+  if (inputPath.length > 1 && inputPath.endsWith('/')) {
+    inputPath = inputPath.slice(0, -1)
+  }
+  
+  // 解析目标目录和可能的高亮文件/文件夹
+  let targetDir = inputPath
+  let targetItem: string | null = null
+  
+  const lastSlashIndex = inputPath.lastIndexOf('/')
+  const lastSegment = inputPath.substring(lastSlashIndex + 1)
+  
+  if (lastSegment && lastSlashIndex !== 0) {
+    // 检查最后一段是否是文件/文件夹名
+    targetDir = inputPath.substring(0, lastSlashIndex) || '/'
+    targetItem = lastSegment
+  }
+  
+  // 设置当前路径和高亮项
+  highlightedItem.value = targetItem
+  currentPath.value = targetDir
 }
 
 // 返回上级目录
@@ -116,7 +197,12 @@ const goToParentDirectory = () => {
 }
 
 // 选择文件
-const toggleFileSelection = (fileName: string) => {
+const toggleFileSelection = (fileName: string, event?: MouseEvent) => {
+  // 如果有按住Ctrl键，则不清除之前的选择
+  if (event && !event.ctrlKey && !event.metaKey) {
+    selectedFiles.value.clear()
+  }
+  
   if (selectedFiles.value.has(fileName)) {
     selectedFiles.value.delete(fileName)
   } else {
@@ -189,6 +275,8 @@ const createNewDirectory = async () => {
     
     if (result.success) {
       await loadCurrentDirectory()
+      // 创建成功后高亮新文件夹
+      highlightedItem.value = dirName
     } else {
       error.value = result.error || '创建文件夹失败'
     }
@@ -255,6 +343,58 @@ const toggleSort = (field: 'name' | 'size' | 'modifyTime') => {
   }
 }
 
+// 显示右键菜单
+const showMenu = (e: MouseEvent, target: 'file' | 'directory' | 'background', itemName?: string) => {
+  e.preventDefault()
+  
+  // 设置右键菜单目标类型和点击的项目
+  contextMenuTarget.value = target
+  clickedItem.value = itemName || null
+  
+  // 如果点击了特定项目且该项目未被选中
+  if (itemName && !selectedFiles.value.has(itemName)) {
+    if (!e.ctrlKey && !e.metaKey) {
+      selectedFiles.value.clear()
+    }
+    selectedFiles.value.add(itemName)
+  }
+  
+  // 获取窗口尺寸
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
+  
+  // 设置右键菜单位置
+  let posX = e.clientX
+  let posY = e.clientY
+  
+  // 估计菜单尺寸
+  const estimatedMenuWidth = 200
+  const estimatedMenuHeight = 200
+  
+  // 确保菜单在可视区域内
+  if (posX + estimatedMenuWidth > windowWidth) {
+    posX = windowWidth - estimatedMenuWidth
+  }
+  
+  if (posY + estimatedMenuHeight > windowHeight) {
+    posY = windowHeight - estimatedMenuHeight
+  }
+  
+  // 设置菜单位置
+  menuPosition.value = { x: posX, y: posY }
+  showContextMenu.value = true
+  
+  // 添加一次性的点击事件监听，点击其他地方关闭菜单
+  setTimeout(() => {
+    window.addEventListener('click', closeMenu, { once: true })
+  }, 0)
+}
+
+// 关闭右键菜单
+const closeMenu = () => {
+  showContextMenu.value = false
+}
+
 // 监听路径变化
 watch(currentPath, () => {
   loadCurrentDirectory()
@@ -271,10 +411,11 @@ watch(() => props.connectionId, (newId, oldId) => {
   if (newId) {
     console.log('检测到新的连接ID，重置路径并加载目录')
     currentPath.value = '/'
+    highlightedItem.value = null
     // 延迟加载目录，确保SFTP连接已经完全建立
     setTimeout(() => {
       loadCurrentDirectory()
-    }, 1000) // 增加延迟到1秒
+    }, 2000) // 增加延迟到2秒
   } else {
     console.log('连接ID被清除，清空文件列表')
     fileList.value = []
@@ -289,42 +430,29 @@ onMounted(() => {
     // 延迟加载目录，确保SFTP连接已经完全建立
     setTimeout(() => {
       loadCurrentDirectory()
-    }, 1000)
+    }, 2000)
   }
 })
 </script>
 
 <template>
   <div class="file-manager" :class="{ 'dark-theme': isDarkTheme }">
-    <!-- 工具栏 -->
-    <div class="toolbar">
-      <button @click="goToParentDirectory" :disabled="currentPath === '/'">
-        返回上级
-      </button>
-      <button @click="uploadFiles">
-        上传文件
-      </button>
-      <button @click="createNewDirectory">
-        新建文件夹
-      </button>
-      <button 
-        @click="downloadSelectedFiles" 
-        :disabled="selectedFiles.size === 0"
-      >
-        下载选中
-      </button>
-      <button 
-        @click="deleteSelectedItems" 
-        :disabled="selectedFiles.size === 0"
-        class="danger"
-      >
-        删除选中
-      </button>
-    </div>
-    
-    <!-- 当前路径 -->
-    <div class="current-path">
-      当前路径: {{ currentPath }}
+    <!-- 路径导航栏 -->
+    <div class="path-navigation">
+      <div class="path-breadcrumb">
+        <button @click="goToParentDirectory" :disabled="currentPath === '/'">
+          <span class="nav-icon">↑</span>
+        </button>
+      </div>
+      <form @submit="navigateToPath" class="path-form">
+        <input 
+          type="text"
+          ref="pathInputRef"
+          class="path-input"
+          :value="currentPath"
+          placeholder="输入路径后按Enter跳转" 
+        />
+      </form>
     </div>
     
     <!-- 错误提示 -->
@@ -334,7 +462,7 @@ onMounted(() => {
     </div>
     
     <!-- 文件列表 -->
-    <div class="file-list-container">
+    <div class="file-list-container" @contextmenu="showMenu($event, 'background')">
       <!-- 表头 -->
       <div class="file-list-header">
         <div class="file-list-row">
@@ -398,10 +526,13 @@ onMounted(() => {
           class="file-list-row"
           :class="{
             'selected': selectedFiles.has(file.name),
-            'is-directory': file.type === 'directory'
+            'is-directory': file.type === 'directory',
+            'highlighted': highlightedItem === file.name
           }"
-          @click="toggleFileSelection(file.name)"
+          :data-name="file.name"
+          @click="toggleFileSelection(file.name, $event)"
           @dblclick="file.type === 'directory' && enterDirectory(file.name)"
+          @contextmenu="showMenu($event, file.type, file.name)"
         >
           <div class="checkbox-cell">
             <input 
@@ -432,6 +563,55 @@ onMounted(() => {
       <div v-if="!isLoading && fileList.length === 0" class="empty-state">
         当前目录为空
       </div>
+      
+      <!-- 右键菜单 -->
+      <div 
+        v-if="showContextMenu" 
+        class="context-menu"
+        :class="{ 'dark-theme': isDarkTheme }"
+        :style="{ top: `${menuPosition.y}px`, left: `${menuPosition.x}px` }"
+      >
+        <!-- 文件右键菜单 -->
+        <template v-if="contextMenuTarget === 'file'">
+          <div class="menu-item" @click="downloadSelectedFiles">
+            <span class="menu-icon">⬇️</span> 下载文件
+          </div>
+          <div class="menu-item" @click="deleteSelectedItems">
+            <span class="menu-icon">🗑️</span> 删除文件
+          </div>
+        </template>
+        
+        <!-- 文件夹右键菜单 -->
+        <template v-else-if="contextMenuTarget === 'directory'">
+          <div 
+            class="menu-item" 
+            @click="clickedItem && enterDirectory(clickedItem)"
+          >
+            <span class="menu-icon">📂</span> 打开文件夹
+          </div>
+          <div class="menu-separator"></div>
+          <div class="menu-item" @click="deleteSelectedItems">
+            <span class="menu-icon">🗑️</span> 删除文件夹
+          </div>
+        </template>
+        
+        <!-- 背景右键菜单 -->
+        <template v-else>
+          <div class="menu-item" @click="uploadFiles">
+            <span class="menu-icon">⬆️</span> 上传文件
+          </div>
+          <div class="menu-item" @click="createNewDirectory">
+            <span class="menu-icon">📁</span> 新建文件夹
+          </div>
+          <div class="menu-separator"></div>
+          <div class="menu-item" @click="goToParentDirectory" :class="{ 'disabled': currentPath === '/' }">
+            <span class="menu-icon">↑</span> 返回上级
+          </div>
+          <div class="menu-item" @click="loadCurrentDirectory">
+            <span class="menu-icon">🔄</span> 刷新
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -450,75 +630,84 @@ onMounted(() => {
   color: #ffffff;
 }
 
-.toolbar {
-  padding: 10px;
+/* 路径导航栏 */
+.path-navigation {
+  padding: 8px 10px;
   display: flex;
   gap: 8px;
   border-bottom: 1px solid #e0e0e0;
+  align-items: center;
 }
 
-.dark-theme .toolbar {
+.dark-theme .path-navigation {
   border-bottom-color: #444444;
 }
 
-button {
-  padding: 6px 12px;
-  border-radius: 4px;
-  border: 1px solid #d0d0d0;
-  background-color: #ffffff;
-  color: #333333;
+.path-breadcrumb {
+  display: flex;
+  align-items: center;
+}
+
+.path-breadcrumb button {
+  background: none;
+  border: none;
+  padding: 5px 8px;
+  font-size: 16px;
   cursor: pointer;
-  transition: all 0.2s;
+  border-radius: 4px;
+  color: #333;
 }
 
-.dark-theme button {
-  background-color: #333333;
-  border-color: #555555;
-  color: #ffffff;
+.dark-theme .path-breadcrumb button {
+  color: #ddd;
 }
 
-button:hover:not(:disabled) {
-  background-color: #f5f5f5;
+.path-breadcrumb button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.1);
 }
 
-.dark-theme button:hover:not(:disabled) {
-  background-color: #444444;
+.dark-theme .path-breadcrumb button:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
-button:disabled {
+.path-breadcrumb button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-button.danger {
-  color: #ff4444;
-  border-color: #ff4444;
+.nav-icon {
+  font-weight: bold;
 }
 
-.dark-theme button.danger {
-  color: #ff6b6b;
-  border-color: #ff6b6b;
+.path-form {
+  flex: 1;
 }
 
-button.danger:hover:not(:disabled) {
-  background-color: #ff4444;
+.path-input {
+  width: 100%;
+  padding: 6px 10px;
+  font-family: monospace;
+  border-radius: 4px;
+  border: 1px solid #d0d0d0;
+  background-color: #ffffff;
+  color: #333333;
+}
+
+.dark-theme .path-input {
+  background-color: #2a2a2a;
+  border-color: #555555;
   color: #ffffff;
 }
 
-.dark-theme button.danger:hover:not(:disabled) {
-  background-color: #ff6b6b;
+.path-input:focus {
+  outline: none;
+  border-color: #4d90fe;
+  box-shadow: 0 0 0 2px rgba(77, 144, 254, 0.2);
 }
 
-.current-path {
-  padding: 10px;
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
-  font-family: monospace;
-}
-
-.dark-theme .current-path {
-  background-color: #2a2a2a;
-  border-bottom-color: #444444;
+.dark-theme .path-input:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
 }
 
 .error-message {
@@ -546,6 +735,7 @@ button.danger:hover:not(:disabled) {
   overflow: auto;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .file-list-header {
@@ -595,6 +785,26 @@ button.danger:hover:not(:disabled) {
   background-color: #1e3a5f;
 }
 
+.file-list-row.highlighted {
+  background-color: #fff9c4;
+  animation: highlight-pulse 3s ease-in-out;
+}
+
+.dark-theme .file-list-row.highlighted {
+  background-color: #5d4037;
+  animation: highlight-pulse-dark 3s ease-in-out;
+}
+
+@keyframes highlight-pulse {
+  0%, 100% { background-color: #fff9c4; }
+  50% { background-color: #ffeb3b; }
+}
+
+@keyframes highlight-pulse-dark {
+  0%, 100% { background-color: #5d4037; }
+  50% { background-color: #8d6e63; }
+}
+
 .checkbox-cell {
   display: flex;
   align-items: center;
@@ -640,6 +850,64 @@ button.danger:hover:not(:disabled) {
 .dark-theme .loading,
 .dark-theme .empty-state {
   color: #999999;
+}
+
+/* 右键菜单样式 */
+.context-menu {
+  position: fixed;
+  background-color: #ffffff;
+  border-radius: 4px;
+  min-width: 180px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  z-index: 1000;
+}
+
+.context-menu.dark-theme {
+  background-color: #333333;
+  border: 1px solid #444444;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+
+.menu-item {
+  padding: 10px 15px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background-color: #f5f5f5;
+}
+
+.dark-theme .menu-item:hover {
+  background-color: #444444;
+}
+
+.menu-icon {
+  margin-right: 10px;
+  font-size: 16px;
+  width: 20px;
+  text-align: center;
+}
+
+.menu-separator {
+  height: 1px;
+  background-color: #e0e0e0;
+  margin: 5px 0;
+}
+
+.dark-theme .menu-separator {
+  background-color: #444444;
+}
+
+.menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.menu-item.disabled:hover {
+  background-color: inherit;
 }
 
 /* 滚动条样式 */

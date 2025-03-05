@@ -188,8 +188,7 @@ const handleOpenLocalTerminal = () => {
 const handleConnectToServer = async (connection: any) => {
   console.log('处理SSH连接请求:', connection.id)
   
-  // 先清除旧的连接ID
-  activeConnectionId.value = null
+  // 不再直接设置activeConnectionId，依赖TerminalView的事件通知
   
   if (!TerminalViewRef.value) {
     hasConnections.value = true
@@ -198,8 +197,8 @@ const handleConnectToServer = async (connection: any) => {
         if (TerminalViewRef.value) {
           try {
             await TerminalViewRef.value.addSshConnection(connection)
-            console.log('SSH连接成功，设置活动连接ID:', connection.id)
-            activeConnectionId.value = connection.id
+            console.log('SSH连接成功')
+            // activeConnectionId.value = connection.id  // 移除这一行
           } catch (error) {
             console.error('SSH连接失败:', error)
           }
@@ -210,12 +209,18 @@ const handleConnectToServer = async (connection: any) => {
   } else {
     try {
       await TerminalViewRef.value.addSshConnection(connection)
-      console.log('SSH连接成功，设置活动连接ID:', connection.id)
-      activeConnectionId.value = connection.id
+      console.log('SSH连接成功')
+      // activeConnectionId.value = connection.id  // 移除这一行
     } catch (error) {
       console.error('SSH连接失败:', error)
     }
   }
+}
+
+// 处理活动连接ID变化
+const handleActiveConnectionChange = (connectionId: string | null) => {
+  console.log('活动连接ID变化:', connectionId)
+  activeConnectionId.value = connectionId
 }
 
 // 在组件加载后设置键盘快捷键
@@ -301,6 +306,7 @@ onMounted(() => {
         :is-dark-theme="isDarkTheme"
         :is-local-mode="isLocalTerminalMode"
         @tabs-change="handleTabsChange"
+        @active-connection-change="handleActiveConnectionChange"
       />
     </div>
 

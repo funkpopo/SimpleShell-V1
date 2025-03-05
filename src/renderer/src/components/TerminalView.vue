@@ -48,6 +48,7 @@ const props = defineProps<{
 // 定义事件
 const emit = defineEmits<{
   (e: 'tabs-change', hasTabs: boolean): void
+  (e: 'active-connection-change', connectionId: string | null): void
 }>()
 
 // 标签页列表
@@ -184,6 +185,11 @@ const switchToTab = (id: string) => {
         refreshTerminalSize(tab);
       }
     });
+    
+    // 通知父组件当前活动连接ID变化
+    const connectionId = tab.isLocalTerminal ? null : (tab.connection?.id || null);
+    console.log(`通知父组件连接ID变化: ${connectionId}`);
+    emit('active-connection-change', connectionId);
   }
 }
 
@@ -215,6 +221,10 @@ const closeTab = (id: string) => {
     disposeTerminal(tab);
     console.log('销毁终端完成');
     
+    // 检查是否关闭的是当前活动的SSH连接
+    const wasActiveSSHConnection = tab.isActive && !tab.isLocalTerminal && tab.connection;
+    let nextConnectionId: string | null = null;
+    
     // 从列表中移除
     console.log('尝试从列表中移除标签页，当前标签页数量:', tabs.value.length);
     tabs.value.splice(index, 1);
@@ -226,12 +236,27 @@ const closeTab = (id: string) => {
         // 优先选择右侧标签页，如果没有则选择左侧
         const nextTab = tabs.value[Math.min(index, tabs.value.length - 1)];
         console.log('切换到下一个标签页:', nextTab.name);
+        
+        // 如果下一个标签页是SSH终端，记录其连接ID
+        if (!nextTab.isLocalTerminal && nextTab.connection) {
+          nextConnectionId = nextTab.connection.id;
+        }
+        
         switchToTab(nextTab.id);
       } else {
         // 没有标签页了，设置activeTabId为null
         console.log('没有标签页了，设置activeTabId为null');
         activeTabId.value = null;
+        
+        // 通知父组件当前没有活动连接
+        emit('active-connection-change', null);
       }
+    }
+    
+    // 如果关闭的是活动的SSH连接，但没有通过switchToTab方法更新（因为可能新的活动标签页是本地终端）
+    if (wasActiveSSHConnection && nextConnectionId === null && tabs.value.length > 0) {
+      console.log('关闭了活动的SSH连接，新的活动标签页可能是本地终端，显式通知连接ID变更为null');
+      emit('active-connection-change', null);
     }
     
     // 通知父组件标签页状态变化
@@ -777,14 +802,21 @@ const addSshConnection = (connection: Connection) => {
     });
     
     // 使用清理后的连接对象添加标签页
-    addTab(`${cleanConnection.name} (${cleanConnection.host})`, false, cleanConnection);
+    const newTabId = addTab(`${cleanConnection.name} (${cleanConnection.host})`, false, cleanConnection);
     
     // 清除可能存在的错误消息
     errorMessage.value = '';
+    
+    // 通知父组件当前活动连接ID变化
+    console.log(`SSH连接已创建，通知父组件更新连接ID: ${cleanConnection.id}`);
+    emit('active-connection-change', cleanConnection.id);
+    
+    return newTabId;
   } catch (error: any) {
     console.error('添加SSH连接时出错:', error);
     // 设置全局错误消息
     errorMessage.value = `无法建立SSH连接: ${error.message || '未知错误'}`;
+    return null;
   }
 }
 
