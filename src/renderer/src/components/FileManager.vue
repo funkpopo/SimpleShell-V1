@@ -13,6 +13,8 @@ import HomeDayIcon from '../assets/home-day.svg'
 import HomeNightIcon from '../assets/home-night.svg'
 import RefreshDayIcon from '../assets/refresh-day.svg'
 import RefreshNightIcon from '../assets/refresh-night.svg'
+import EditDayIcon from '../assets/edit-day.svg'
+import EditNightIcon from '../assets/edit-night.svg'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -885,7 +887,7 @@ onBeforeUnmount(() => {
       <div 
         v-if="showContextMenu" 
         class="context-menu"
-        :class="{ 'dark-theme': isDarkTheme }"
+        :class="{ 'dark-theme': props.isDarkTheme }"
         :style="{ top: `${menuPosition.y}px`, left: `${menuPosition.x}px` }"
       >
         <!-- 文件右键菜单 -->
@@ -895,7 +897,6 @@ onBeforeUnmount(() => {
               :src="props.isDarkTheme ? DownloadNightIcon : DownloadDayIcon"
               class="download-icon"
             />
-            下载文件
             {{ selectedFiles.size > 1 ? `下载 ${selectedFiles.size} 个文件` : '下载文件' }}
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
@@ -903,7 +904,6 @@ onBeforeUnmount(() => {
               :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
               class="delete-icon"
             />
-            删除文件
             {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件` : '删除文件' }}
           </div>
         </template>
@@ -926,7 +926,6 @@ onBeforeUnmount(() => {
               :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
               class="delete-icon"
             /> 
-            删除文件夹
             {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件夹` : '删除文件夹' }}
           </div>
         </template>
@@ -969,7 +968,6 @@ onBeforeUnmount(() => {
                 :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
                 class="delete-icon"
               />
-              删除选中的
               {{ `删除选中的 ${selectedFiles.size} 个项目` }}
             </div>
           </template>
@@ -1058,10 +1056,35 @@ onBeforeUnmount(() => {
 .refresh-icon,
 .delete-icon,
 .download-icon,
-.plus-icon {
+.plus-icon,
+.edit-icon {
   width: 20px;
   height: 20px;
   margin-right: 8px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.dark-theme .folder-icon,
+.dark-theme .upload-icon,
+.dark-theme .home-icon,
+.dark-theme .refresh-icon,
+.dark-theme .delete-icon,
+.dark-theme .download-icon,
+.dark-theme .plus-icon,
+.dark-theme .edit-icon {
+  opacity: 1;
+}
+
+.menu-item:hover .folder-icon,
+.menu-item:hover .upload-icon,
+.menu-item:hover .home-icon,
+.menu-item:hover .refresh-icon,
+.menu-item:hover .delete-icon,
+.menu-item:hover .download-icon,
+.menu-item:hover .plus-icon,
+.menu-item:hover .edit-icon {
+  opacity: 1;
 }
 
 .path-form {
