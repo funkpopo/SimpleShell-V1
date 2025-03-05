@@ -1,6 +1,6 @@
 # 创建新文件
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -11,6 +11,12 @@ interface FileItem {
   permissions: string
   owner: string
   group: string
+}
+
+// 定义选中的项目类型
+interface SelectedItem {
+  name: string
+  type: 'file' | 'directory'
 }
 
 // 定义props
@@ -29,8 +35,21 @@ const fileList = ref<FileItem[]>([])
 const isLoading = ref(false)
 // 错误信息
 const error = ref('')
+// 成功消息
+const successMessage = ref('')
+// 成功消息计时器
+let successMessageTimer: number | null = null
 // 选中的文件
 const selectedFiles = ref<Set<string>>(new Set())
+// 选中的项目类型映射
+const selectedItemTypes = ref<Map<string, 'file' | 'directory'>>(new Map())
+// 删除操作进度状态
+const deleteProgress = ref({
+  isDeleting: false,
+  total: 0,
+  completed: 0,
+  currentItem: ''
+})
 // 排序方式
 const sortBy = ref<'name' | 'size' | 'modifyTime'>('name')
 const sortOrder = ref<'asc' | 'desc'>('asc')
@@ -73,6 +92,7 @@ const loadCurrentDirectory = async () => {
     
     // 清除之前的选中和高亮状态
     selectedFiles.value.clear()
+    selectedItemTypes.value.clear()
     
     // 添加加载超时控制
     const timeoutPromise = new Promise<void>((_, reject) => {
@@ -197,22 +217,26 @@ const goToParentDirectory = () => {
 }
 
 // 选择文件
-const toggleFileSelection = (fileName: string, event?: MouseEvent) => {
+const toggleFileSelection = (fileName: string, fileType: 'file' | 'directory', event?: MouseEvent) => {
   // 如果有按住Ctrl键，则不清除之前的选择
   if (event && !event.ctrlKey && !event.metaKey) {
     selectedFiles.value.clear()
+    selectedItemTypes.value.clear()
   }
   
   if (selectedFiles.value.has(fileName)) {
     selectedFiles.value.delete(fileName)
+    selectedItemTypes.value.delete(fileName)
   } else {
     selectedFiles.value.add(fileName)
+    selectedItemTypes.value.set(fileName, fileType)
   }
 }
 
 // 清除选择
 const clearSelection = () => {
   selectedFiles.value.clear()
+  selectedItemTypes.value.clear()
 }
 
 // 下载选中的文件
@@ -285,26 +309,126 @@ const createNewDirectory = async () => {
   }
 }
 
+// 获取选中的项目的类型统计
+const getSelectedItemsCount = () => {
+  let files = 0
+  let directories = 0
+  
+  selectedItemTypes.value.forEach((type) => {
+    if (type === 'file') files++
+    else directories++
+  })
+  
+  return { files, directories }
+}
+
+// 显示成功消息
+const showSuccessMessage = (message: string) => {
+  // 清除之前的计时器
+  if (successMessageTimer !== null) {
+    clearTimeout(successMessageTimer)
+  }
+  
+  // 设置新消息
+  successMessage.value = message
+  
+  // 3秒后自动清除
+  successMessageTimer = window.setTimeout(() => {
+    successMessage.value = ''
+    successMessageTimer = null
+  }, 3000)
+}
+
 // 删除选中的文件/文件夹
 const deleteSelectedItems = async () => {
-  if (!confirm('确定要删除选中的项目吗？此操作不可恢复。')) return
+  const { files, directories } = getSelectedItemsCount()
+  
+  let confirmMessage = ''
+  if (files > 0 && directories > 0) {
+    confirmMessage = `确定要删除选中的 ${files} 个文件和 ${directories} 个文件夹吗？此操作不可恢复。`
+  } else if (files > 0) {
+    confirmMessage = `确定要删除选中的 ${files} 个文件吗？此操作不可恢复。`
+  } else if (directories > 0) {
+    confirmMessage = `确定要删除选中的 ${directories} 个文件夹吗？文件夹内的所有内容也会被删除，此操作不可恢复。`
+  } else {
+    return // 没有选中任何项目
+  }
+  
+  if (!confirm(confirmMessage)) return
+  
+  // 清除之前的成功消息
+  successMessage.value = ''
+  
+  // 设置删除进度状态
+  deleteProgress.value = {
+    isDeleting: true,
+    total: selectedFiles.value.size,
+    completed: 0,
+    currentItem: ''
+  }
   
   try {
-    for (const fileName of selectedFiles.value) {
-      const result = await window.api.sftpDelete({
-        connectionId: props.connectionId,
-        path: `${currentPath.value}/${fileName}`
-      })
+    // 转换为数组以便按顺序处理
+    const itemsToDelete = Array.from(selectedFiles.value)
+    
+    for (const fileName of itemsToDelete) {
+      deleteProgress.value.currentItem = fileName
       
-      if (!result.success) {
-        error.value = `删除 ${fileName} 失败: ${result.error}`
-        break
+      const fileType = selectedItemTypes.value.get(fileName) || 'file'
+      
+      try {
+        // 构建完整路径
+        const fullPath = `${currentPath.value}/${fileName}`
+        
+        // 执行删除操作
+        const result = await window.api.sftpDelete({
+          connectionId: props.connectionId,
+          path: fullPath
+        })
+        
+        if (!result.success) {
+          throw new Error(result.error || `删除${fileType === 'file' ? '文件' : '文件夹'} ${fileName} 失败`)
+        }
+        
+        // 更新完成数量
+        deleteProgress.value.completed++
+      } catch (itemError: any) {
+        console.error(`删除 ${fileName} 失败:`, itemError)
+        error.value = itemError.message || `删除 ${fileName} 时发生错误`
+        
+        // 如果不是最后一个项目，提示是否继续
+        if (deleteProgress.value.completed < deleteProgress.value.total - 1) {
+          if (!confirm(`删除 ${fileName} 失败: ${error.value}\n\n是否继续删除其他项目？`)) {
+            break
+          }
+        }
       }
     }
+    
+    // 清除选择
     clearSelection()
+    
+    // 刷新当前目录
     await loadCurrentDirectory()
+    
+    // 显示成功消息
+    if (deleteProgress.value.completed === deleteProgress.value.total) {
+      // 所有项目都成功删除
+      const message = deleteProgress.value.total === 1 
+        ? `已成功删除 1 个项目` 
+        : `已成功删除 ${deleteProgress.value.completed} 个项目`
+      
+      showSuccessMessage(message)
+    } else if (deleteProgress.value.completed > 0) {
+      // 部分项目删除成功
+      showSuccessMessage(`已删除 ${deleteProgress.value.completed}/${deleteProgress.value.total} 个项目`)
+    }
   } catch (err: any) {
+    console.error('删除操作失败:', err)
     error.value = err.message || '删除文件时发生错误'
+  } finally {
+    // 重置删除进度状态
+    deleteProgress.value.isDeleting = false
   }
 }
 
@@ -355,30 +479,45 @@ const showMenu = (e: MouseEvent, target: 'file' | 'directory' | 'background', it
   if (itemName && !selectedFiles.value.has(itemName)) {
     if (!e.ctrlKey && !e.metaKey) {
       selectedFiles.value.clear()
+      selectedItemTypes.value.clear()
     }
     selectedFiles.value.add(itemName)
+    
+    // 记录项目类型
+    const fileItem = fileList.value.find(f => f.name === itemName)
+    if (fileItem) {
+      selectedItemTypes.value.set(itemName, fileItem.type)
+    }
   }
   
   // 获取窗口尺寸
   const windowWidth = window.innerWidth
   const windowHeight = window.innerHeight
   
-  // 设置右键菜单位置
+  // 初始设置菜单位置为鼠标位置
   let posX = e.clientX
   let posY = e.clientY
   
-  // 估计菜单尺寸
-  const estimatedMenuWidth = 200
-  const estimatedMenuHeight = 200
+  // 菜单估计尺寸 - 宽和高的初始估计值，但会在渲染后重新调整
+  const estimatedMenuWidth = 220  // 增加一些余量
+  const estimatedMenuHeight = 230
   
-  // 确保菜单在可视区域内
+  // 确保菜单在可视区域内的初步调整
   if (posX + estimatedMenuWidth > windowWidth) {
-    posX = windowWidth - estimatedMenuWidth
+    // 如果右侧空间不足，则显示在鼠标左侧
+    posX = posX - estimatedMenuWidth
   }
   
   if (posY + estimatedMenuHeight > windowHeight) {
-    posY = windowHeight - estimatedMenuHeight
+    // 如果底部空间不足，则显示在鼠标上方
+    posY = posY - estimatedMenuHeight
   }
+  
+  // 确保不超出左边界
+  if (posX < 0) posX = 10
+  
+  // 确保不超出上边界
+  if (posY < 0) posY = 10
   
   // 设置菜单位置
   menuPosition.value = { x: posX, y: posY }
@@ -387,12 +526,74 @@ const showMenu = (e: MouseEvent, target: 'file' | 'directory' | 'background', it
   // 添加一次性的点击事件监听，点击其他地方关闭菜单
   setTimeout(() => {
     window.addEventListener('click', closeMenu, { once: true })
+    // 确保点击ESC也能关闭菜单
+    window.addEventListener('keydown', handleMenuKeydown, { once: true })
+    
+    // 在下一个渲染周期，根据实际菜单尺寸进行位置微调
+    nextTick(() => {
+      const menuElement = document.querySelector('.context-menu') as HTMLElement
+      if (menuElement) {
+        const menuRect = menuElement.getBoundingClientRect()
+        
+        // 获取菜单实际尺寸
+        const actualMenuWidth = menuRect.width
+        const actualMenuHeight = menuRect.height
+        
+        // 再次检查并调整位置
+        let adjustedX = menuPosition.value.x
+        let adjustedY = menuPosition.value.y
+        
+        // 右侧边界检查
+        if (adjustedX + actualMenuWidth > windowWidth) {
+          adjustedX = windowWidth - actualMenuWidth - 10 // 10px边距
+        }
+        
+        // 左侧边界检查
+        if (adjustedX < 0) {
+          adjustedX = 10
+        }
+        
+        // 底部边界检查
+        if (adjustedY + actualMenuHeight > windowHeight) {
+          adjustedY = windowHeight - actualMenuHeight - 10
+        }
+        
+        // 顶部边界检查
+        if (adjustedY < 0) {
+          adjustedY = 10
+        }
+        
+        // 如果位置有调整，应用新位置
+        if (adjustedX !== menuPosition.value.x || adjustedY !== menuPosition.value.y) {
+          menuPosition.value = { x: adjustedX, y: adjustedY }
+        }
+      }
+    })
   }, 0)
+}
+
+// 处理菜单键盘事件
+const handleMenuKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') {
+    closeMenu()
+  }
 }
 
 // 关闭右键菜单
 const closeMenu = () => {
   showContextMenu.value = false
+  window.removeEventListener('keydown', handleMenuKeydown)
+}
+
+// 处理键盘删除事件
+const handleKeyDown = (e: KeyboardEvent) => {
+  // 如果按下Delete键并且选中了项目
+  if (e.key === 'Delete' && selectedFiles.value.size > 0) {
+    // 阻止默认行为
+    e.preventDefault()
+    // 触发删除操作
+    deleteSelectedItems()
+  }
 }
 
 // 监听路径变化
@@ -423,6 +624,55 @@ watch(() => props.connectionId, (newId, oldId) => {
   }
 }, { immediate: true })
 
+// 处理窗口大小变化时调整菜单位置
+const handleWindowResize = () => {
+  if (showContextMenu.value) {
+    // 获取当前窗口尺寸
+    const windowWidth = window.innerWidth
+    const windowHeight = window.innerHeight
+    
+    // 获取菜单元素
+    const menuElement = document.querySelector('.context-menu') as HTMLElement
+    if (menuElement) {
+      const menuRect = menuElement.getBoundingClientRect()
+      
+      // 检查是否超出可视区域
+      let needsAdjustment = false
+      let newX = menuPosition.value.x
+      let newY = menuPosition.value.y
+      
+      // 右侧检查
+      if (newX + menuRect.width > windowWidth) {
+        newX = windowWidth - menuRect.width - 10
+        needsAdjustment = true
+      }
+      
+      // 左侧检查
+      if (newX < 0) {
+        newX = 10
+        needsAdjustment = true
+      }
+      
+      // 底部检查
+      if (newY + menuRect.height > windowHeight) {
+        newY = windowHeight - menuRect.height - 10
+        needsAdjustment = true
+      }
+      
+      // 顶部检查
+      if (newY < 0) {
+        newY = 10
+        needsAdjustment = true
+      }
+      
+      // 更新位置
+      if (needsAdjustment) {
+        menuPosition.value = { x: newX, y: newY }
+      }
+    }
+  }
+}
+
 // 组件挂载时加载目录
 onMounted(() => {
   console.log('FileManager组件挂载，当前连接ID:', props.connectionId)
@@ -431,6 +681,23 @@ onMounted(() => {
     setTimeout(() => {
       loadCurrentDirectory()
     }, 2000)
+  }
+  
+  // 添加键盘事件监听
+  window.addEventListener('keydown', handleKeyDown)
+  
+  // 添加窗口大小变化监听
+  window.addEventListener('resize', handleWindowResize)
+})
+
+// 组件卸载时移除事件监听
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+  window.removeEventListener('resize', handleWindowResize)
+  
+  // 清除计时器
+  if (successMessageTimer !== null) {
+    clearTimeout(successMessageTimer)
   }
 })
 </script>
@@ -459,6 +726,12 @@ onMounted(() => {
     <div v-if="error" class="error-message">
       {{ error }}
       <button class="close-error" @click="error = ''">×</button>
+    </div>
+    
+    <!-- 成功提示 -->
+    <div v-if="successMessage" class="success-message">
+      {{ successMessage }}
+      <button class="close-success" @click="successMessage = ''">×</button>
     </div>
     
     <!-- 文件列表 -->
@@ -530,7 +803,7 @@ onMounted(() => {
             'highlighted': highlightedItem === file.name
           }"
           :data-name="file.name"
-          @click="toggleFileSelection(file.name, $event)"
+          @click="toggleFileSelection(file.name, file.type, $event)"
           @dblclick="file.type === 'directory' && enterDirectory(file.name)"
           @contextmenu="showMenu($event, file.type, file.name)"
         >
@@ -539,7 +812,7 @@ onMounted(() => {
               type="checkbox" 
               :checked="selectedFiles.has(file.name)"
               @click.stop
-              @change="toggleFileSelection(file.name)"
+              @change="toggleFileSelection(file.name, file.type)"
             >
           </div>
           <div class="name-cell">
@@ -564,6 +837,20 @@ onMounted(() => {
         当前目录为空
       </div>
       
+      <!-- 删除进度条 -->
+      <div v-if="deleteProgress.isDeleting" class="delete-progress">
+        <div class="progress-info">
+          正在删除: {{ deleteProgress.currentItem }}
+          <span class="progress-counter">{{ deleteProgress.completed }}/{{ deleteProgress.total }}</span>
+        </div>
+        <div class="progress-bar-container">
+          <div 
+            class="progress-bar" 
+            :style="{ width: `${(deleteProgress.completed / deleteProgress.total) * 100}%` }"
+          ></div>
+        </div>
+      </div>
+      
       <!-- 右键菜单 -->
       <div 
         v-if="showContextMenu" 
@@ -574,10 +861,12 @@ onMounted(() => {
         <!-- 文件右键菜单 -->
         <template v-if="contextMenuTarget === 'file'">
           <div class="menu-item" @click="downloadSelectedFiles">
-            <span class="menu-icon">⬇️</span> 下载文件
+            <span class="menu-icon">⬇️</span> 
+            {{ selectedFiles.size > 1 ? `下载 ${selectedFiles.size} 个文件` : '下载文件' }}
           </div>
-          <div class="menu-item" @click="deleteSelectedItems">
-            <span class="menu-icon">🗑️</span> 删除文件
+          <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
+            <span class="menu-icon">🗑️</span> 
+            {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件` : '删除文件' }}
           </div>
         </template>
         
@@ -590,8 +879,9 @@ onMounted(() => {
             <span class="menu-icon">📂</span> 打开文件夹
           </div>
           <div class="menu-separator"></div>
-          <div class="menu-item" @click="deleteSelectedItems">
-            <span class="menu-icon">🗑️</span> 删除文件夹
+          <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
+            <span class="menu-icon">🗑️</span> 
+            {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件夹` : '删除文件夹' }}
           </div>
         </template>
         
@@ -610,6 +900,13 @@ onMounted(() => {
           <div class="menu-item" @click="loadCurrentDirectory">
             <span class="menu-icon">🔄</span> 刷新
           </div>
+          <template v-if="selectedFiles.size > 0">
+            <div class="menu-separator"></div>
+            <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
+              <span class="menu-icon">🗑️</span> 
+              {{ `删除选中的 ${selectedFiles.size} 个项目` }}
+            </div>
+          </template>
         </template>
       </div>
     </div>
@@ -730,12 +1027,63 @@ onMounted(() => {
   padding: 0 5px;
 }
 
+.success-message {
+  margin: 10px;
+  padding: 10px;
+  background-color: #4caf50;
+  color: #ffffff;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.close-success {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 5px;
+}
+
 .file-list-container {
   flex: 1;
   overflow: auto;
   display: flex;
   flex-direction: column;
   position: relative;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.dark-theme .file-list-container {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.file-list-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.file-list-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.file-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.dark-theme .file-list-container::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.file-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+.dark-theme .file-list-container::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
 }
 
 .file-list-header {
@@ -858,9 +1206,13 @@ onMounted(() => {
   background-color: #ffffff;
   border-radius: 4px;
   min-width: 180px;
+  max-width: 300px;
+  max-height: calc(100vh - 20px); /* 限制最大高度，避免超出屏幕 */
+  overflow-y: auto; /* 添加垂直滚动 */
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
   z-index: 1000;
+  padding: 4px 0;
+  user-select: none; /* 防止文本被选中 */
 }
 
 .context-menu.dark-theme {
@@ -869,11 +1221,32 @@ onMounted(() => {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
+/* 自定义滚动条样式 */
+.context-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.context-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.context-menu::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.dark-theme.context-menu::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
 .menu-item {
   padding: 10px 15px;
   display: flex;
   align-items: center;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .menu-item:hover {
@@ -910,38 +1283,76 @@ onMounted(() => {
   background-color: inherit;
 }
 
-/* 滚动条样式 */
-.file-list-container {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
-}
-
-.dark-theme .file-list-container {
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
-}
-
-.file-list-container::-webkit-scrollbar {
-  width: 8px;
-}
-
-.file-list-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.file-list-container::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.2);
+/* 删除进度条样式 */
+.delete-progress {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  max-width: 90%;
+  background-color: #ffffff;
   border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  padding: 12px;
+  z-index: 2000;
 }
 
-.dark-theme .file-list-container::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2);
+.dark-theme .delete-progress {
+  background-color: #333333;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
-.file-list-container::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.3);
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.dark-theme .file-list-container::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.3);
+.progress-counter {
+  margin-left: 10px;
+  font-weight: bold;
+}
+
+.progress-bar-container {
+  height: 6px;
+  background-color: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dark-theme .progress-bar-container {
+  background-color: #555555;
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: #4caf50;
+  transition: width 0.3s ease;
+}
+
+.dark-theme .progress-bar {
+  background-color: #4caf50;
+}
+
+/* 删除菜单项样式 */
+.delete-menu-item {
+  color: #f44336;
+}
+
+.dark-theme .delete-menu-item {
+  color: #ff6b6b;
+}
+
+.delete-menu-item:hover {
+  background-color: rgba(244, 67, 54, 0.1);
+}
+
+.dark-theme .delete-menu-item:hover {
+  background-color: rgba(255, 107, 107, 0.1);
 }
 </style> 

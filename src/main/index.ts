@@ -94,17 +94,18 @@ function saveConnections(organizations: Organization[]): boolean {
     // console.log('文件写入完成，内容长度:', jsonContent.length, '字节')
     
     // 验证写入是否成功
-    if (fs.existsSync(connectionsFilePath)) {
-      const stats = fs.statSync(connectionsFilePath)
-      // console.log('文件大小:', stats.size, '字节')
+    // if (fs.existsSync(connectionsFilePath)) {
+      // 检查文件大小 - 仅用于调试
+      // const fileSize = fs.statSync(connectionsFilePath).size
+      // console.log('文件大小:', fileSize, '字节')
       
-      // 验证内容是否正确写入
-      const readContent = fs.readFileSync(connectionsFilePath, 'utf-8')
-      const success = readContent.length > 0 && readContent === jsonContent
-      // console.log('内容验证:', success ? '成功' : '失败')
+    // 验证内容是否正确写入 - 仅用于调试
+      // const readContent = fs.readFileSync(connectionsFilePath, 'utf-8')
+      // const isValid = readContent.length > 0 && readContent === jsonContent
+      // console.log('内容验证:', isValid ? '成功' : '失败')
       
-      // 内容验证不再做额外处理，避免无限循环
-    }
+    // 内容验证不再做额外处理，避免无限循环
+    //  }
     
     return true
   } catch (error) {
@@ -293,7 +294,8 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
             // 验证SFTP连接是否可用
             try {
               console.log('测试SFTP连接...')
-              const testList = await sftp.list('/')
+              // 直接调用list方法但不存储结果到未使用变量
+              await sftp.list('/')
               console.log('SFTP连接测试成功，可以列出根目录')
               
               // 只有在SFTP连接测试成功后才返回成功
