@@ -8,12 +8,12 @@
 
 ## 使用说明
 使用左侧边栏菜单添加和管理SSH连接。左侧边栏可以管理当前连接目标服务器的文件。
-点击左侧边栏连接项触发打开新的终端标签页
+使用右侧边栏连接项触发打开新的终端标签页
 在终端界面与远程服务器实时交互
 
 ## 配置文件
 
-SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保存的SSH连接信息。出于安全考虑，该文件不会被提交到版本控制系统。
+SSH连接配置保存在 `connections.json` 文件中。该文件包含了所有保存的SSH连接信息。出于安全考虑，该文件不会被提交到版本控制系统。
 
 如果该文件不存在，应用程序会自动创建它。
 
@@ -30,14 +30,9 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 ## 运行项目（测试）
 
-1. 启动开发服务器：
+1. 测试electron
    ```
-   npm run serve
-   ```
-
-3. 测试electron
-   ```
-   npm run electron:serve
+   npm run electron:dev
    ```
 
 ---
@@ -46,12 +41,10 @@ SSH连接配置保存在 `config.json` 文件中。该文件包含了所有保�
 
 1. 编译前端
    ```
-   # 默认打包为win x64
-   npm run electron:build
    # Windows平台打包
-   npm run electron:build:win
+   npm run build:win
    # Linux平台打包
-   npm run electron:build:linux
+   npm run build:linux
    ```
 ## 图标包
 ## Ui Oval Interface Icons Collection
