@@ -63,14 +63,11 @@ onUnmounted(() => {
 })
 
 const formatBytes = (bytes: number): string => {
-  const units = ['B', 'KB', 'MB', 'GB']
-  let size = bytes
-  let unitIndex = 0
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex++
-  }
-  return `${Math.round(size * 100) / 100} ${units[unitIndex]}`
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 // 计算进度条颜色
@@ -97,6 +94,7 @@ const memoryProgressStyle = computed(() => ({
   <div class="system-monitor">
     <!-- 迷你监控 -->
     <div class="mini-monitor">
+      <!-- CPU 迷你进度条 -->
       <div 
         class="mini-progress cpu" 
         data-type="CPU"
@@ -104,87 +102,90 @@ const memoryProgressStyle = computed(() => ({
       >
         <div 
           class="mini-progress-bar"
-          :style="{ 
-            height: `${systemInfo.cpuInfo.usage}%`, 
-            background: getProgressColor(systemInfo.cpuInfo.usage),
-            backgroundImage: 'var(--progress-gradient)'
+          :style="{
+            height: `${systemInfo.cpuInfo.usage}%`,
+            background: 'var(--progress-gradient)'
           }"
         ></div>
         <span class="mini-progress-text">{{ systemInfo.cpuInfo.usage }}%</span>
       </div>
+
+      <!-- 内存迷你进度条 -->
       <div 
-        class="mini-progress memory"
+        class="mini-progress memory" 
         data-type="MEM"
-        :title="`内存使用率: ${systemInfo.memoryInfo.usedPercentage}%\n总内存: ${formatBytes(systemInfo.memoryInfo.total)}\n已用: ${formatBytes(systemInfo.memoryInfo.used)}`"
+        :title="`内存使用率: ${systemInfo.memoryInfo.usedPercentage}%\n已用: ${formatBytes(systemInfo.memoryInfo.used)}\n总计: ${formatBytes(systemInfo.memoryInfo.total)}`"
       >
         <div 
           class="mini-progress-bar"
-          :style="{ 
-            height: `${systemInfo.memoryInfo.usedPercentage}%`, 
-            background: getProgressColor(systemInfo.memoryInfo.usedPercentage),
-            backgroundImage: 'var(--progress-gradient)'
+          :style="{
+            height: `${systemInfo.memoryInfo.usedPercentage}%`,
+            background: 'var(--progress-gradient)'
           }"
         ></div>
         <span class="mini-progress-text">{{ systemInfo.memoryInfo.usedPercentage }}%</span>
       </div>
     </div>
 
-    <div class="monitor-section">
-      <h3>操作系统信息</h3>
-      <div class="info-item">
-        <span>平台：</span>
-        <span :title="systemInfo.osInfo.platform">{{ systemInfo.osInfo.platform }}</span>
-      </div>
-      <div class="info-item">
-        <span>版本：</span>
-        <span :title="systemInfo.osInfo.release">{{ systemInfo.osInfo.release }}</span>
-      </div>
-      <div class="info-item">
-        <span>架构：</span>
-        <span :title="systemInfo.osInfo.arch">{{ systemInfo.osInfo.arch }}</span>
-      </div>
-    </div>
-
-    <div class="monitor-section">
-      <h3>CPU信息</h3>
-      <div class="info-item">
-        <span>型号：</span>
-        <span :title="systemInfo.cpuInfo.model">{{ systemInfo.cpuInfo.model }}</span>
-      </div>
-      <div class="info-item">
-        <span>核心数：</span>
-        <span>{{ systemInfo.cpuInfo.cores }}</span>
-      </div>
-      <div class="info-item">
-        <span>使用率：</span>
-        <div class="progress-bar">
-          <div
-            class="progress"
-            :style="cpuProgressStyle"
-          ></div>
-          <span class="progress-text">{{ systemInfo.cpuInfo.usage }}%</span>
+    <!-- 常规监控内容 -->
+    <div class="monitor-content">
+      <div class="monitor-section">
+        <h3>操作系统信息</h3>
+        <div class="info-item">
+          <span>平台：</span>
+          <span :title="systemInfo.osInfo.platform">{{ systemInfo.osInfo.platform }}</span>
+        </div>
+        <div class="info-item">
+          <span>版本：</span>
+          <span :title="systemInfo.osInfo.release">{{ systemInfo.osInfo.release }}</span>
+        </div>
+        <div class="info-item">
+          <span>架构：</span>
+          <span :title="systemInfo.osInfo.arch">{{ systemInfo.osInfo.arch }}</span>
         </div>
       </div>
-    </div>
 
-    <div class="monitor-section">
-      <h3>内存信息</h3>
-      <div class="info-item">
-        <span>总内存：</span>
-        <span>{{ formatBytes(systemInfo.memoryInfo.total) }}</span>
+      <div class="monitor-section">
+        <h3>CPU信息</h3>
+        <div class="info-item">
+          <span>型号：</span>
+          <span :title="systemInfo.cpuInfo.model">{{ systemInfo.cpuInfo.model }}</span>
+        </div>
+        <div class="info-item">
+          <span>核心数：</span>
+          <span>{{ systemInfo.cpuInfo.cores }}</span>
+        </div>
+        <div class="info-item">
+          <span>使用率：</span>
+          <div class="progress-bar">
+            <div
+              class="progress"
+              :style="cpuProgressStyle"
+            ></div>
+            <span class="progress-text">{{ systemInfo.cpuInfo.usage }}%</span>
+          </div>
+        </div>
       </div>
-      <div class="info-item">
-        <span>已用内存：</span>
-        <span>{{ formatBytes(systemInfo.memoryInfo.used) }}</span>
-      </div>
-      <div class="info-item">
-        <span>使用率：</span>
-        <div class="progress-bar">
-          <div
-            class="progress"
-            :style="memoryProgressStyle"
-          ></div>
-          <span class="progress-text">{{ systemInfo.memoryInfo.usedPercentage }}%</span>
+
+      <div class="monitor-section">
+        <h3>内存信息</h3>
+        <div class="info-item">
+          <span>总内存：</span>
+          <span>{{ formatBytes(systemInfo.memoryInfo.total) }}</span>
+        </div>
+        <div class="info-item">
+          <span>已用内存：</span>
+          <span>{{ formatBytes(systemInfo.memoryInfo.used) }}</span>
+        </div>
+        <div class="info-item">
+          <span>使用率：</span>
+          <div class="progress-bar">
+            <div
+              class="progress"
+              :style="memoryProgressStyle"
+            ></div>
+            <span class="progress-text">{{ systemInfo.memoryInfo.usedPercentage }}%</span>
+          </div>
         </div>
       </div>
     </div>
@@ -214,10 +215,18 @@ const memoryProgressStyle = computed(() => ({
   height: 100%;
   width: 40px;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 .right-sidebar-collapsed .monitor-section {
-  display: none;
+  width: 40px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: none !important;
+  box-shadow: none !important;
+  display: flex;
+  justify-content: center;
+  overflow: visible;
 }
 
 /* 迷你进度条容器 */
@@ -237,6 +246,11 @@ const memoryProgressStyle = computed(() => ({
   height: auto;
   padding: 12px 0;
   gap: 20px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  z-index: 100;
 }
 
 /* 迷你进度条样式 */
@@ -274,10 +288,8 @@ const memoryProgressStyle = computed(() => ({
   font-size: 8px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.9);
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
   z-index: 2;
   letter-spacing: 0;
-  background: rgba(0, 0, 0, 0.3);
   padding: 1px 2px;
   border-radius: 3px;
   white-space: nowrap;
@@ -315,13 +327,11 @@ const memoryProgressStyle = computed(() => ({
   bottom: 4px;
   transform: translateX(-50%);
   color: white;
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 400;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
   z-index: 1;
   white-space: nowrap;
   letter-spacing: -0.5px;
-  background: rgba(0, 0, 0, 0.3);
   padding: 1px 3px;
   border-radius: 4px;
 }
@@ -352,6 +362,38 @@ const memoryProgressStyle = computed(() => ({
     var(--progress-color) 50%,
     color-mix(in srgb, var(--progress-color) 90%, black) 100%
   );
+}
+
+/* 暗色主题下的迷你监控样式 */
+.dark-theme .mini-progress {
+  box-shadow: 
+    inset 0 2px 4px rgba(0, 0, 0, 0.4),
+    0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dark-theme .mini-progress::before {
+  background: rgba(0, 0, 0, 0);
+}
+
+.dark-theme .mini-progress-text {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .mini-progress-bar {
+  box-shadow: 
+    0 1px 0 rgba(255, 255, 255, 0.2) inset
+}
+
+/* 隐藏折叠状态下的常规监控内容 */
+.right-sidebar-collapsed .monitor-content {
+  display: none;
+}
+
+/* 确保mini-monitor在折叠状态下可见 */
+.right-sidebar-collapsed .system-monitor .mini-monitor {
+  display: flex;
+  opacity: 1;
+  visibility: visible;
 }
 
 .monitor-section {
@@ -468,7 +510,6 @@ const memoryProgressStyle = computed(() => ({
   transform: translateY(-50%);
   font-size: 11px;
   color: white;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.3);
   font-weight: 500;
   white-space: nowrap;
   min-width: 35px;

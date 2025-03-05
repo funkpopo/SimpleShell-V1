@@ -56,6 +56,7 @@ const isRightSplitDragging = ref(false)
 const toggleLeftSidebar = () => {
   if (isLeftSidebarExpanded.value) {
     lastSidebarWidth.value = sidebarWidth.value
+    sidebarWidth.value = 40 // 设置为折叠宽度
   } else {
     sidebarWidth.value = lastSidebarWidth.value
   }
@@ -403,6 +404,7 @@ onMounted(() => {
   overflow: visible;
   box-sizing: border-box;
   z-index: 5;
+  transition: all 0.2s ease-in-out;
 }
 
 .dark-theme .left-sidebar,
@@ -507,16 +509,17 @@ onMounted(() => {
 
 .left-sidebar-collapsed,
 .right-sidebar-collapsed {
-  width: 40px;
-  min-width: 40px;
-  max-width: 40px;
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
   resize: none;
   margin: 0;
   padding: 0;
-  transition:
-    width 0.2s ease-in-out,
-    min-width 0.2s ease-in-out,
-    max-width 0.2s ease-in-out;
+}
+
+.left-sidebar-collapsed .left-sidebar-content,
+.right-sidebar-collapsed .right-sidebar-content {
+  display: none;
 }
 
 .left-sidebar-toggle,
@@ -587,6 +590,24 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.right-sidebar-collapsed .right-sidebar-items {
+  padding: 0;
+  width: 40px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.right-sidebar-collapsed .right-sidebar-content {
+  width: 40px;
+  height: 100%;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .monitor-section,

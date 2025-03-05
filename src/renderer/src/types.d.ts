@@ -16,9 +16,16 @@ declare interface API {
   onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void;
   
   // 文件操作相关方法
-  openFileDialog: (options?: { title?: string; buttonLabel?: string; defaultPath?: string }) => Promise<{
+  openFileDialog: (options?: { 
+    title?: string; 
+    buttonLabel?: string; 
+    defaultPath?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+    properties?: string[];
+  }) => Promise<{
     canceled: boolean;
     filePath?: string;
+    filePaths?: string[];
     fileContent?: string;
     error?: string;
   }>;

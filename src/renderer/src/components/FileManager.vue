@@ -258,22 +258,46 @@ const uploadFiles = async () => {
   try {
     const result = await window.api.openFileDialog({
       title: '选择要上传的文件',
-      buttonLabel: '上传'
+      buttonLabel: '上传',
+      filters: [
+        { name: '所有文件', extensions: ['*'] }
+      ],
+      properties: ['openFile', 'multiSelections']
     })
     
-    if (!result.canceled && result.filePath) {
-      const uploadResult = await window.api.sftpUploadFile({
-        connectionId: props.connectionId,
-        localPath: result.filePath,
-        remotePath: currentPath.value
-      })
+    if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+      let successCount = 0
+      let failCount = 0
       
-      if (!uploadResult.success) {
-        error.value = `上传文件失败: ${uploadResult.error}`
-      } else {
-        // 刷新当前目录
-        await loadCurrentDirectory()
+      for (const filePath of result.filePaths) {
+        try {
+          const uploadResult = await window.api.sftpUploadFile({
+            connectionId: props.connectionId,
+            localPath: filePath,
+            remotePath: currentPath.value
+          })
+          
+          if (uploadResult.success) {
+            successCount++
+          } else {
+            failCount++
+            console.error(`上传文件 ${filePath} 失败:`, uploadResult.error)
+          }
+        } catch (err) {
+          failCount++
+          console.error(`上传文件 ${filePath} 时发生错误:`, err)
+        }
       }
+      
+      // 显示上传结果
+      if (successCount > 0) {
+        showSuccessMessage(`成功上传 ${successCount} 个文件${failCount > 0 ? `，${failCount} 个文件上传失败` : ''}`)
+      } else if (failCount > 0) {
+        error.value = `所有文件上传失败`
+      }
+      
+      // 刷新当前目录
+      await loadCurrentDirectory()
     }
   } catch (err: any) {
     error.value = err.message || '上传文件时发生错误'

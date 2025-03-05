@@ -725,11 +725,11 @@ app.whenReady().then(() => {
       try {
         const { dialog } = require('electron')
         const result = await dialog.showOpenDialog({
-          properties: ['openFile'],
-          filters: [
-            { name: '私钥文件', extensions: ['pem', 'key', 'ppk', '*'] }
+          properties: options?.properties || ['openFile'],
+          filters: options?.filters || [
+            { name: '所有文件', extensions: ['*'] }
           ],
-          title: options?.title || '选择SSH私钥文件',
+          title: options?.title || '选择文件',
           buttonLabel: options?.buttonLabel || '选择',
           defaultPath: options?.defaultPath || app.getPath('home')
         })
@@ -738,21 +738,30 @@ app.whenReady().then(() => {
           return { canceled: true }
         }
         
-        // 读取选中的文件内容
-        const filePath = result.filePaths[0]
-        try {
-          const fileContent = fs.readFileSync(filePath, 'utf-8')
-          return {
-            canceled: false,
-            filePath,
-            fileContent
+        // 如果是选择私钥文件，则需要读取文件内容
+        if (!options?.properties?.includes('multiSelections')) {
+          const filePath = result.filePaths[0]
+          try {
+            const fileContent = fs.readFileSync(filePath, 'utf-8')
+            return {
+              canceled: false,
+              filePath,
+              fileContent
+            }
+          } catch (readError: any) {
+            return {
+              canceled: false,
+              filePath,
+              error: `无法读取文件内容: ${readError.message}`
+            }
           }
-        } catch (readError: any) {
-          return {
-            canceled: false,
-            filePath,
-            error: `无法读取文件内容: ${readError.message}`
-          }
+        }
+        
+        // 对于多选或普通文件，只返回文件路径
+        return {
+          canceled: false,
+          filePath: result.filePaths[0],
+          filePaths: result.filePaths
         }
       } catch (error: any) {
         console.error('打开文件对话框失败:', error)
