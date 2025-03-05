@@ -268,7 +268,7 @@ const downloadSelectedFiles = async () => {
 }
 
 // 上传文件
-const uploadFiles = async () => {
+const uploadFiles = async (targetPath?: string) => {
   try {
     const result = await window.api.openFileDialog({
       title: '选择要上传的文件',
@@ -283,12 +283,15 @@ const uploadFiles = async () => {
       let successCount = 0
       let failCount = 0
       
+      // 使用传入的目标路径或当前路径
+      const uploadPath = targetPath || currentPath.value
+      
       for (const filePath of result.filePaths) {
         try {
           const uploadResult = await window.api.sftpUploadFile({
             connectionId: props.connectionId,
             localPath: filePath,
-            remotePath: currentPath.value
+            remotePath: uploadPath
           })
           
           if (uploadResult.success) {
@@ -315,6 +318,15 @@ const uploadFiles = async () => {
     }
   } catch (err: any) {
     error.value = err.message || '上传文件时发生错误'
+  }
+}
+
+// 上传文件到指定文件夹
+const handleUploadToFolder = async (e: MouseEvent) => {
+  e.preventDefault()
+  if (clickedItem.value) {
+    const targetPath = `${currentPath.value}/${clickedItem.value}`
+    await uploadFiles(targetPath)
   }
 }
 
@@ -709,6 +721,12 @@ const handleWindowResize = () => {
   }
 }
 
+// 处理背景区域上传文件
+const handleBackgroundUpload = async (e: MouseEvent) => {
+  e.preventDefault()
+  await uploadFiles()
+}
+
 // 组件挂载时加载目录
 onMounted(() => {
   console.log('FileManager组件挂载，当前连接ID:', props.connectionId)
@@ -903,6 +921,7 @@ onBeforeUnmount(() => {
             />
             {{ selectedFiles.size > 1 ? `下载 ${selectedFiles.size} 个文件` : '下载文件' }}
           </div>
+          <div class="menu-separator"></div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
             <img
               :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
@@ -924,6 +943,13 @@ onBeforeUnmount(() => {
             />
             打开文件夹
           </div>
+          <div class="menu-item" @click="handleUploadToFolder">
+            <img
+              :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon"
+              class="upload-icon"
+            />
+            上传到该文件夹
+          </div>
           <div class="menu-separator"></div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
             <img
@@ -936,7 +962,7 @@ onBeforeUnmount(() => {
         
         <!-- 背景右键菜单 -->
         <template v-else>
-          <div class="menu-item" @click="uploadFiles">
+          <div class="menu-item" @click="handleBackgroundUpload">
             <img
               :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon"
               class="upload-icon"
@@ -1327,36 +1353,30 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   min-width: 180px;
   max-width: 300px;
-  max-height: calc(100vh - 20px); /* 限制最大高度，避免超出屏幕 */
-  overflow-y: auto; /* 添加垂直滚动 */
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   z-index: 1000;
   padding: 4px 0;
-  user-select: none; /* 防止文本被选中 */
+  user-select: none;
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.context-menu.dark-theme {
+.dark-theme .context-menu {
   background-color: #333333;
-  border: 1px solid #444444;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
-/* 自定义滚动条样式 */
-.context-menu::-webkit-scrollbar {
-  width: 6px;
+/* 菜单分割线样式 */
+.menu-separator {
+  height: 1px;
+  background-color: #e0e0e0;
+  margin: 4px 0;
 }
 
-.context-menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.context-menu::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 3px;
-}
-
-.dark-theme.context-menu::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2);
+.dark-theme .menu-separator {
+  background-color: #444444;
 }
 
 .menu-item {
@@ -1382,16 +1402,6 @@ onBeforeUnmount(() => {
   font-size: 16px;
   width: 20px;
   text-align: center;
-}
-
-.menu-separator {
-  height: 1px;
-  background-color: #e0e0e0;
-  margin: 5px 0;
-}
-
-.dark-theme .menu-separator {
-  background-color: #444444;
 }
 
 .menu-item.disabled {
