@@ -13,12 +13,6 @@ interface FileItem {
   group: string
 }
 
-// 定义选中的项目类型
-interface SelectedItem {
-  name: string
-  type: 'file' | 'directory'
-}
-
 // 定义props
 const props = defineProps<{
   connectionId: string
