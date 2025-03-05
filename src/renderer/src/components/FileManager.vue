@@ -9,12 +9,12 @@ import DownloadDayIcon from '../assets/download-day.svg'
 import DownloadNightIcon from '../assets/download-night.svg'
 import PlusDayIcon from '../assets/plus-day.svg'
 import PlusNightIcon from '../assets/plus-night.svg'
-import HomeDayIcon from '../assets/home-day.svg'
-import HomeNightIcon from '../assets/home-night.svg'
+import BackDayIcon from '../assets/back-day.svg'
+import BackNightIcon from '../assets/back-night.svg'
 import RefreshDayIcon from '../assets/refresh-day.svg'
 import RefreshNightIcon from '../assets/refresh-night.svg'
-import EditDayIcon from '../assets/edit-day.svg'
-import EditNightIcon from '../assets/edit-night.svg'
+import OpenFolderDayIcon from '../assets/openfolder-day.svg'
+import OpenFolderNightIcon from '../assets/openfolder-night.svg'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -508,17 +508,21 @@ const showMenu = (e: MouseEvent, target: 'file' | 'directory' | 'background', it
   clickedItem.value = itemName || null
   
   // 如果点击了特定项目且该项目未被选中
-  if (itemName && !selectedFiles.value.has(itemName)) {
-    if (!e.ctrlKey && !e.metaKey) {
-      selectedFiles.value.clear()
-      selectedItemTypes.value.clear()
-    }
-    selectedFiles.value.add(itemName)
-    
-    // 记录项目类型
+  if (itemName) {
+    // 获取项目类型
     const fileItem = fileList.value.find(f => f.name === itemName)
     if (fileItem) {
-      selectedItemTypes.value.set(itemName, fileItem.type)
+      // 根据实际的文件类型设置contextMenuTarget
+      contextMenuTarget.value = fileItem.type
+      
+      if (!selectedFiles.value.has(itemName)) {
+        if (!e.ctrlKey && !e.metaKey) {
+          selectedFiles.value.clear()
+          selectedItemTypes.value.clear()
+        }
+        selectedFiles.value.add(itemName)
+        selectedItemTypes.value.set(itemName, fileItem.type)
+      }
     }
   }
   
@@ -837,7 +841,7 @@ onBeforeUnmount(() => {
           :data-name="file.name"
           @click="toggleFileSelection(file.name, file.type, $event)"
           @dblclick="file.type === 'directory' && enterDirectory(file.name)"
-          @contextmenu="showMenu($event, file.type, file.name)"
+          @contextmenu.stop="showMenu($event, file.type, file.name)"
         >
           <div class="checkbox-cell">
             <input 
@@ -915,8 +919,8 @@ onBeforeUnmount(() => {
             @click="clickedItem && enterDirectory(clickedItem)"
           >
             <img
-              :src="props.isDarkTheme ? HomeNightIcon : HomeDayIcon"
-              class="home-icon"
+              :src="props.isDarkTheme ? OpenFolderNightIcon : OpenFolderDayIcon"
+              class="openfolder-icon"
             />
             打开文件夹
           </div>
@@ -949,8 +953,8 @@ onBeforeUnmount(() => {
           <div class="menu-separator"></div>
           <div class="menu-item" @click="goToParentDirectory" :class="{ 'disabled': currentPath === '/' }">
             <img
-              :src="props.isDarkTheme ? HomeNightIcon : HomeDayIcon"
-              class="home-icon"
+              :src="props.isDarkTheme ? BackNightIcon : BackDayIcon"
+              class="back-icon"
             />
             返回上级
           </div>
@@ -1046,7 +1050,10 @@ onBeforeUnmount(() => {
 .dark-menu .refresh-icon,
 .dark-menu .delete-icon,
 .dark-menu .download-icon,
-.dark-menu .plus-icon {
+.dark-menu .plus-icon,
+.dark-menu .back-icon,
+.dark-menu .edit-icon,
+.dark-menu .openfolder-icon {
   opacity: 1;
 }
 
@@ -1057,7 +1064,9 @@ onBeforeUnmount(() => {
 .delete-icon,
 .download-icon,
 .plus-icon,
-.edit-icon {
+.back-icon,
+.edit-icon,
+.openfolder-icon {
   width: 20px;
   height: 20px;
   margin-right: 8px;
