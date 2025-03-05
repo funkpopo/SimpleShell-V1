@@ -1,6 +1,18 @@
 # 创建新文件
 <script setup lang="ts">
 import { ref, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import DeleteDayIcon from '../assets/delete-day.svg'
+import DeleteNightIcon from '../assets/delete-night.svg'
+import UploadDayIcon from '../assets/upload-day.svg'
+import UploadNightIcon from '../assets/upload-night.svg'
+import DownloadDayIcon from '../assets/download-day.svg'
+import DownloadNightIcon from '../assets/download-night.svg'
+import PlusDayIcon from '../assets/plus-day.svg'
+import PlusNightIcon from '../assets/plus-night.svg'
+import HomeDayIcon from '../assets/home-day.svg'
+import HomeNightIcon from '../assets/home-night.svg'
+import RefreshDayIcon from '../assets/refresh-day.svg'
+import RefreshNightIcon from '../assets/refresh-night.svg'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -879,11 +891,19 @@ onBeforeUnmount(() => {
         <!-- 文件右键菜单 -->
         <template v-if="contextMenuTarget === 'file'">
           <div class="menu-item" @click="downloadSelectedFiles">
-            <span class="menu-icon">⬇️</span> 
+            <img
+              :src="props.isDarkTheme ? DownloadNightIcon : DownloadDayIcon"
+              class="download-icon"
+            />
+            下载文件
             {{ selectedFiles.size > 1 ? `下载 ${selectedFiles.size} 个文件` : '下载文件' }}
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
-            <span class="menu-icon">🗑️</span> 
+            <img
+              :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+              class="delete-icon"
+            />
+            删除文件
             {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件` : '删除文件' }}
           </div>
         </template>
@@ -894,11 +914,19 @@ onBeforeUnmount(() => {
             class="menu-item" 
             @click="clickedItem && enterDirectory(clickedItem)"
           >
-            <span class="menu-icon">📂</span> 打开文件夹
+            <img
+              :src="props.isDarkTheme ? HomeNightIcon : HomeDayIcon"
+              class="home-icon"
+            />
+            打开文件夹
           </div>
           <div class="menu-separator"></div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
-            <span class="menu-icon">🗑️</span> 
+            <img
+              :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+              class="delete-icon"
+            /> 
+            删除文件夹
             {{ selectedFiles.size > 1 ? `删除 ${selectedFiles.size} 个文件夹` : '删除文件夹' }}
           </div>
         </template>
@@ -906,22 +934,42 @@ onBeforeUnmount(() => {
         <!-- 背景右键菜单 -->
         <template v-else>
           <div class="menu-item" @click="uploadFiles">
-            <span class="menu-icon">⬆️</span> 上传文件
+            <img
+              :src="props.isDarkTheme ? UploadNightIcon : UploadDayIcon"
+              class="upload-icon"
+            />
+            上传文件
           </div>
           <div class="menu-item" @click="createNewDirectory">
-            <span class="menu-icon">📁</span> 新建文件夹
+            <img
+              :src="props.isDarkTheme ? PlusNightIcon : PlusDayIcon"
+              class="plus-icon"
+            />
+            新建文件夹
           </div>
           <div class="menu-separator"></div>
           <div class="menu-item" @click="goToParentDirectory" :class="{ 'disabled': currentPath === '/' }">
-            <span class="menu-icon">↑</span> 返回上级
+            <img
+              :src="props.isDarkTheme ? HomeNightIcon : HomeDayIcon"
+              class="home-icon"
+            />
+            返回上级
           </div>
           <div class="menu-item" @click="loadCurrentDirectory">
-            <span class="menu-icon">🔄</span> 刷新
+            <img
+              :src="props.isDarkTheme ? RefreshNightIcon : RefreshDayIcon"
+              class="refresh-icon"
+            />
+            刷新
           </div>
           <template v-if="selectedFiles.size > 0">
             <div class="menu-separator"></div>
             <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
-              <span class="menu-icon">🗑️</span> 
+              <img
+                :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
+                class="delete-icon"
+              />
+              删除选中的
               {{ `删除选中的 ${selectedFiles.size} 个项目` }}
             </div>
           </template>
@@ -992,6 +1040,28 @@ onBeforeUnmount(() => {
 
 .nav-icon {
   font-weight: bold;
+}
+
+.dark-menu .folder-icon,
+.dark-menu .upload-icon,
+.dark-menu .home-icon,
+.dark-menu .refresh-icon,
+.dark-menu .delete-icon,
+.dark-menu .download-icon,
+.dark-menu .plus-icon {
+  opacity: 1;
+}
+
+.folder-icon,
+.upload-icon,
+.home-icon,
+.refresh-icon,
+.delete-icon,
+.download-icon,
+.plus-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
 }
 
 .path-form {
