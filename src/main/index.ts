@@ -32,6 +32,9 @@ const connectionsFilePath = is.dev
   ? path.join(process.cwd(), 'connections.json')
   : path.join(app.getPath('userData'), 'connections.json')
 
+// 设置文件路径
+const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+
 // 输出环境信息
 // console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
 // console.log('连接配置文件路径:', connectionsFilePath)
@@ -961,3 +964,37 @@ app.on('window-all-closed', () => {
 
 // In this file you can include the rest of your app"s specific main process
 // code. You can also put them in separate files and require them here.
+
+// 加载设置
+ipcMain.handle('load-settings', async () => {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const data = await fs.promises.readFile(settingsPath, 'utf8')
+      return JSON.parse(data)
+    }
+    // 返回默认设置
+    return {
+      language: 'zh-CN',
+      fontSize: 14,
+      fontFamily: 'system-ui'
+    }
+  } catch (error) {
+    console.error('加载设置失败:', error)
+    throw error
+  }
+})
+
+// 保存设置
+ipcMain.handle('save-settings', async (_event, settings) => {
+  try {
+    await fs.promises.writeFile(settingsPath, JSON.stringify(settings, null, 2))
+    // 通知所有窗口更新设置
+    BrowserWindow.getAllWindows().forEach(win => {
+      win.webContents.send('settings-saved', settings)
+    })
+    return true
+  } catch (error) {
+    console.error('保存设置失败:', error)
+    throw error
+  }
+})

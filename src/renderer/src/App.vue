@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import NightIcon from './assets/night.svg'
 import DayIcon from './assets/day.svg'
+import BrainIcon from './assets/brain.svg'
 import SettingsNightIcon from './assets/settings-night.svg'
 import SettingsDayIcon from './assets/settings-day.svg'
 import SystemMonitor from './components/SystemMonitor.vue'
@@ -9,6 +10,7 @@ import ConnectionManager from './components/ConnectionManager.vue'
 import Welcome from './components/Welcome.vue'
 import TerminalView from './components/TerminalView.vue'
 import FileManager from './components/FileManager.vue'
+import SettingsDialog from './components/SettingsDialog.vue'
 
 // 定义TerminalView组件实例的类型
 interface TerminalViewInstance {
@@ -224,6 +226,20 @@ const handleActiveConnectionChange = (connectionId: string | null) => {
   activeConnectionId.value = connectionId
 }
 
+// 设置对话框状态
+const settingsDialogVisible = ref(false)
+
+// 处理设置保存
+const handleSaveSettings = async (settings: any) => {
+  try {
+    await window.api.saveSettings(settings)
+    // 这里可以添加保存成功的提示
+  } catch (error) {
+    console.error('保存设置失败:', error)
+    // 这里可以添加保存失败的提示
+  }
+}
+
 // 在组件加载后设置键盘快捷键
 onMounted(() => {
   // 设置主题切换快捷键
@@ -236,6 +252,11 @@ onMounted(() => {
     // Alt+L 打开新的本地终端
     if (e.altKey && e.key === 'l') {
       handleOpenLocalTerminal()
+    }
+    
+    // Alt+S 打开设置
+    if (e.altKey && e.key === 's') {
+      settingsDialogVisible.value = true
     }
   })
 })
@@ -252,6 +273,10 @@ onMounted(() => {
       <div class="left-sidebar-toggle" @click="toggleLeftSidebar">
         {{ isLeftSidebarExpanded ? '' : '' }}
       </div>
+      
+      <!-- 分割线 -->
+      <div class="sidebar-separator"></div>
+      
       <div class="left-sidebar-content">
         <transition name="fade-slide">
           <div v-show="isLeftSidebarExpanded" class="left-sidebar-items">
@@ -269,7 +294,9 @@ onMounted(() => {
           </div>
         </transition>
       </div>
+      
       <div v-show="isLeftSidebarExpanded" class="resize-handle" @mousedown="handleMouseDown"></div>
+      
       <!-- 按钮容器 -->
       <div class="sidebar-buttons">
         <!-- 主题切换按钮 -->
@@ -280,8 +307,16 @@ onMounted(() => {
             class="theme-icon"
           />
         </div>
+        <!-- AI助手按钮 -->
+        <div class="ai-toggle">
+          <img
+            :src="BrainIcon"
+            alt="AI助手"
+            class="ai-icon"
+          />
+        </div>
         <!-- 设置按钮 -->
-        <div class="settings-toggle" @click="toggleSettings">
+        <div class="settings-toggle" @click="settingsDialogVisible = true">
           <img
             :src="isDarkTheme ? SettingsNightIcon : SettingsDayIcon"
             alt="'设置'"
@@ -354,6 +389,13 @@ onMounted(() => {
         @mousedown="handleRightMouseDown"
       ></div>
     </div>
+
+    <!-- 设置对话框 -->
+    <SettingsDialog
+      v-model:visible="settingsDialogVisible"
+      :is-dark-theme="isDarkTheme"
+      @save="handleSaveSettings"
+    />
   </div>
 </template>
 
@@ -394,7 +436,7 @@ onMounted(() => {
   width: 250px;
   min-width: 100px;
   max-width: 500px;
-  background-color: #c0c0c0;
+  background-color: var(--section-bg);
   color: #333;
   height: 100%;
   margin: 0;
@@ -425,21 +467,32 @@ onMounted(() => {
 
 /* 按钮容器样式 */
 .sidebar-buttons {
-  position: absolute;
-  bottom: 20px;
-  left: 0;
-  right: 0;
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 5px;
-  padding: 0 4px;
-  transition: all 0.2s ease-in-out;
+  gap: 8px;
+  padding: 10px;
+  background-color: var(--section-bg);
 }
 
-/* 调整按钮基础样式 */
+.dark-theme .sidebar-buttons {
+  background-color: #1e1e1e;
+}
+
+/* 调整左侧边栏折叠状态下的按钮布局 */
+.left-sidebar-collapsed .sidebar-buttons {
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 4px;
+}
+
+.left-sidebar-collapsed .sidebar-separator {
+  display: none;
+}
+
+/* 主题切换按钮样式 */
 .theme-toggle,
-.settings-toggle {
+.settings-toggle,
+.ai-toggle {
   position: relative;
   width: 32px;
   height: 32px;
@@ -450,36 +503,34 @@ onMounted(() => {
   background-color: rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   transition: all 0.2s ease-in-out;
-  z-index: 1000;
 }
 
 .dark-theme .theme-toggle,
-.dark-theme .settings-toggle {
+.dark-theme .settings-toggle,
+.dark-theme .ai-toggle {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
 .theme-toggle:hover,
-.settings-toggle:hover {
+.settings-toggle:hover,
+.ai-toggle:hover {
   background-color: rgba(0, 0, 0, 0.15);
 }
 
 .dark-theme .theme-toggle:hover,
-.dark-theme .settings-toggle:hover {
+.dark-theme .settings-toggle:hover,
+.dark-theme .ai-toggle:hover {
   background-color: rgba(255, 255, 255, 0.2);
 }
 
 .theme-icon,
-.settings-icon {
+.settings-icon,
+.ai-icon {
   width: 20px;
   height: 20px;
 }
 
-/* 收起状态下的按钮样式 */
-.left-sidebar-collapsed .sidebar-buttons {
-  flex-direction: column;
-  align-items: center;
-}
-
+/* 调整resize-handle的位置 */
 .resize-handle {
   position: absolute;
   top: 0;
@@ -500,6 +551,10 @@ onMounted(() => {
 }
 
 .resize-handle:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .resize-handle:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -507,6 +562,7 @@ onMounted(() => {
   background-color: rgba(255, 255, 255, 0.2);
 }
 
+/* 折叠状态样式 */
 .left-sidebar-collapsed,
 .right-sidebar-collapsed {
   width: 40px !important;
@@ -743,5 +799,49 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* 分割线样式 */
+.sidebar-separator {
+  height: 1px;
+  background-color: rgba(0, 0, 0, 0.1);
+  margin: 0;
+  width: 100%;
+}
+
+.dark-theme .sidebar-separator {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* AI助手按钮样式 */
+.ai-toggle {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease-in-out;
+  z-index: 1000;
+}
+
+.dark-theme .ai-toggle {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.ai-toggle:hover {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.dark-theme .ai-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.ai-icon {
+  width: 20px;
+  height: 20px;
 }
 </style>

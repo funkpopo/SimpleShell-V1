@@ -70,6 +70,12 @@ interface Organization {
   connections: Connection[]
 }
 
+interface GlobalSettings {
+  language: string
+  fontSize: number
+  fontFamily: string
+}
+
 interface API {
   getSystemInfo(): Promise<SystemInfo>
   loadConnections(): Promise<Organization[]>
@@ -133,6 +139,9 @@ interface API {
     success: boolean;
     error?: string;
   }>;
+  
+  loadSettings: () => Promise<GlobalSettings>
+  saveSettings: (settings: GlobalSettings) => Promise<boolean>
 }
 
 declare global {

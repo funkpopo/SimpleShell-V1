@@ -909,7 +909,7 @@ onBeforeUnmount(() => {
       <div 
         v-if="showContextMenu" 
         class="context-menu"
-        :class="{ 'dark-theme': props.isDarkTheme }"
+        :class="{ 'dark-menu': props.isDarkTheme }"
         :style="{ top: `${menuPosition.y}px`, left: `${menuPosition.x}px` }"
       >
         <!-- 文件右键菜单 -->
@@ -921,7 +921,6 @@ onBeforeUnmount(() => {
             />
             {{ selectedFiles.size > 1 ? `下载 ${selectedFiles.size} 个文件` : '下载文件' }}
           </div>
-          <div class="menu-separator"></div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
             <img
               :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
@@ -950,7 +949,6 @@ onBeforeUnmount(() => {
             />
             上传到该文件夹
           </div>
-          <div class="menu-separator"></div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
             <img
               :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
@@ -976,7 +974,6 @@ onBeforeUnmount(() => {
             />
             新建文件夹
           </div>
-          <div class="menu-separator"></div>
           <div class="menu-item" @click="goToParentDirectory" :class="{ 'disabled': currentPath === '/' }">
             <img
               :src="props.isDarkTheme ? BackNightIcon : BackDayIcon"
@@ -992,7 +989,6 @@ onBeforeUnmount(() => {
             刷新
           </div>
           <template v-if="selectedFiles.size > 0">
-            <div class="menu-separator"></div>
             <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
               <img
                 :src="props.isDarkTheme ? DeleteNightIcon : DeleteDayIcon"
@@ -1349,52 +1345,78 @@ onBeforeUnmount(() => {
 /* 右键菜单样式 */
 .context-menu {
   position: fixed;
-  background-color: #ffffff;
-  border-radius: 4px;
+  background-color: #f5f5f5;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
   min-width: 180px;
   max-width: 300px;
-  max-height: calc(100vh - 20px);
-  overflow-y: auto;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  z-index: 1000;
+  z-index: 9999;
+  color: var(--text-color);
+  opacity: 1 !important;
+  backdrop-filter: none;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  overflow: hidden;
   padding: 4px 0;
-  user-select: none;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: top 0.1s ease, left 0.1s ease;
+  max-height: 80vh; /* 防止在极端情况下菜单太长 */
+  overflow-y: auto; /* 如果内容太多则显示滚动条 */
 }
 
-.dark-theme .context-menu {
-  background-color: #333333;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+/* 暗色主题下的菜单样式 */
+.dark-menu {
+  background-color: #222;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 
-/* 菜单分割线样式 */
-.menu-separator {
-  height: 1px;
-  background-color: #e0e0e0;
-  margin: 4px 0;
-}
-
-.dark-theme .menu-separator {
-  background-color: #444444;
+.dark-menu .menu-separator {
+  background-color: var(--separator-color, rgba(255, 255, 255, 0.06));
 }
 
 .menu-item {
-  padding: 10px 15px;
+  padding: 8px 15px;
   display: flex;
   align-items: center;
   cursor: pointer;
+  color: var(--text-color);
+  transition: all 0.2s ease;
+  position: relative;
+  margin: 2px 4px;
+  border-radius: 4px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.menu-item:hover {
-  background-color: #f5f5f5;
+.menu-item:not(:last-child) {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.dark-theme .menu-item:hover {
-  background-color: #444444;
+.dark-menu .menu-item:not(:last-child) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.menu-item:hover {
+  background-color: rgba(0, 0, 0, 0.07);
+}
+
+.dark-menu .menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.menu-item.delete-menu-item,
+.menu-item.delete {
+  color: var(--delete-color, #f44336);
+}
+
+/* 确保夜间模式下禁用项的样式 */
+.menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dark-menu .menu-item.disabled {
+  opacity: 0.4;
 }
 
 .menu-icon {
@@ -1402,15 +1424,6 @@ onBeforeUnmount(() => {
   font-size: 16px;
   width: 20px;
   text-align: center;
-}
-
-.menu-item.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.menu-item.disabled:hover {
-  background-color: inherit;
 }
 
 /* 删除进度条样式 */
@@ -1467,22 +1480,5 @@ onBeforeUnmount(() => {
 
 .dark-theme .progress-bar {
   background-color: #4caf50;
-}
-
-/* 删除菜单项样式 */
-.delete-menu-item {
-  color: #f44336;
-}
-
-.dark-theme .delete-menu-item {
-  color: #ff6b6b;
-}
-
-.delete-menu-item:hover {
-  background-color: rgba(244, 67, 54, 0.1);
-}
-
-.dark-theme .delete-menu-item:hover {
-  background-color: rgba(255, 107, 107, 0.1);
 }
 </style> 

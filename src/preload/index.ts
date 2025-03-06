@@ -153,6 +153,12 @@ const api = {
   sftpDelete: async (params: { connectionId: string; path: string }): Promise<any> => {
     return await ipcRenderer.invoke('sftp:delete', params)
   },
+  
+  // 加载设置
+  loadSettings: () => ipcRenderer.invoke('load-settings'),
+  
+  // 保存设置
+  saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings)
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
@@ -170,4 +176,17 @@ if (process.contextIsolated) {
   window.electron = electronAPI
   // @ts-ignore (define in dts)
   window.api = api
+}
+
+// 应用设置到页面
+function applySettings(settings: any) {
+  if (settings.fontSize) {
+    document.documentElement.style.fontSize = `${settings.fontSize}px`
+  }
+  
+  if (settings.fontFamily) {
+    document.documentElement.style.fontFamily = settings.fontFamily
+  }
+  
+  // 语言设置可以通过i18n库来处理
 }
