@@ -48,3 +48,13 @@ SSH连接配置保存在 `connections.json` 文件中。该文件包含了所有
    ```
 ## 图标包
 ## Ui Oval Interface Icons Collection
+
+## TODO
+1. 连接信息加密解密机制
+2. 文件传输浮窗自动删除item机制
+3. 右键菜单文件信息查看支持
+4. 连接信息拖拽排序分组
+5. 应用图标
+6. xterm中的鼠标事件、快捷键、搜索机制
+7. AI功能
+8. 多语言支持
