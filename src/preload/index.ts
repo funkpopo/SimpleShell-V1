@@ -180,13 +180,62 @@ if (process.contextIsolated) {
 
 // 应用设置到页面
 function applySettings(settings: any) {
-  if (settings.fontSize) {
-    document.documentElement.style.fontSize = `${settings.fontSize}px`
+  if (!settings) {
+    console.error('无法应用设置：设置对象为空')
+    return
   }
   
-  if (settings.fontFamily) {
-    document.documentElement.style.fontFamily = settings.fontFamily
-  }
+  console.log('正在应用设置:', JSON.stringify(settings))
   
-  // 语言设置可以通过i18n库来处理
+  try {
+    // 应用字体大小 - 设置为CSS变量以便全局使用
+    if (settings.fontSize) {
+      console.log(`应用字体大小: ${settings.fontSize}px`)
+      // 基础字号设置到根元素
+      document.documentElement.style.setProperty('--base-font-size', `${settings.fontSize}px`)
+      // 不同元素根据基础字号计算比例
+      document.documentElement.style.setProperty('--large-font-size', `${settings.fontSize * 1.2}px`)
+      document.documentElement.style.setProperty('--small-font-size', `${settings.fontSize * 0.85}px`)
+      
+      // 直接设置文档字号
+      document.documentElement.style.fontSize = `${settings.fontSize}px`
+      document.body.style.fontSize = `${settings.fontSize}px`
+    }
+    
+    // 应用字体族
+    if (settings.fontFamily) {
+      console.log(`应用字体: ${settings.fontFamily}`)
+      document.documentElement.style.setProperty('--base-font-family', settings.fontFamily)
+      document.documentElement.style.fontFamily = settings.fontFamily
+      document.body.style.fontFamily = settings.fontFamily
+    }
+    
+    // 应用语言设置 - 这可以通过i18n库来处理
+    if (settings.language) {
+      console.log(`应用语言: ${settings.language}`)
+      document.documentElement.setAttribute('lang', settings.language)
+      
+      // 通过自定义事件通知应用语言变更
+      const event = new CustomEvent('language-changed', { detail: settings.language })
+      document.dispatchEvent(event)
+    }
+    
+    console.log('设置应用完成')
+  } catch (error) {
+    console.error('应用设置时出错:', error)
+  }
 }
+
+// 监听设置更新事件并应用
+ipcRenderer.on('settings-saved', (_event, settings) => {
+  console.log('收到设置更新:', settings)
+  applySettings(settings)
+})
+
+// 初始加载时应用设置
+ipcRenderer.invoke('load-settings').then((settings) => {
+  if (settings) {
+    console.log('初始加载设置:', settings)
+    applySettings(settings)
+  }
+})

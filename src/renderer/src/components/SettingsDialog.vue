@@ -22,6 +22,18 @@ interface GlobalSettings {
   fontFamily: string
 }
 
+// 防抖工具函数
+function debounce<T extends (...args: any[]) => any>(fn: T, delay: number): (...args: Parameters<T>) => void {
+  let timer: NodeJS.Timeout | null = null
+  return function(this: any, ...args: Parameters<T>) {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      fn.apply(this, args)
+      timer = null
+    }, delay)
+  }
+}
+
 // 表单数据
 const formData = ref<GlobalSettings>({
   language: 'zh-CN',
@@ -67,10 +79,60 @@ const loadSettings = async () => {
   }
 }
 
-// 保存设置
-const saveSettings = () => {
-  emit('save', formData.value)
-  emit('update:visible', false)
+// 实时保存设置
+const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
+  try {
+    // 创建一个干净的纯数据对象，避免Vue的响应式对象可能导致的序列化问题
+    const cleanSettings = {
+      language: newSettings.language,
+      fontSize: newSettings.fontSize,
+      fontFamily: newSettings.fontFamily
+    }
+    
+    console.log('实时保存设置:', JSON.stringify(cleanSettings))
+    const result = await window.api.saveSettings(cleanSettings)
+    if (result) {
+      console.log('设置已实时保存并应用')
+      // 设置已通过IPC事件应用，不需要额外处理
+    } else {
+      console.error('实时保存设置失败：返回结果为false')
+    }
+  } catch (error: any) {
+    console.error('实时保存设置出错:', error?.message || error)
+  }
+}
+
+// 创建防抖版本的保存函数
+const debouncedSaveSettings = debounce(saveSettingsRealtime, 500)
+
+// 保存设置并关闭对话框
+const saveSettings = async () => {
+  try {
+    // 创建一个干净的纯数据对象
+    const cleanSettings = {
+      language: formData.value.language,
+      fontSize: formData.value.fontSize,
+      fontFamily: formData.value.fontFamily
+    }
+    
+    console.log('开始保存设置:', JSON.stringify(cleanSettings))
+    // 直接保存，不使用防抖
+    const result = await window.api.saveSettings(cleanSettings)
+    
+    if (result) {
+      console.log('设置保存成功')
+      // 通知父组件
+      emit('save', cleanSettings)
+      // 关闭对话框
+      emit('update:visible', false)
+    } else {
+      console.error('设置保存失败：返回结果为false')
+      alert('设置保存失败，请重试')
+    }
+  } catch (error: any) {
+    console.error('保存设置出错:', error)
+    alert(`设置保存失败: ${error?.message || '未知错误'}`)
+  }
 }
 
 // 取消
@@ -78,6 +140,11 @@ const cancelSettings = () => {
   emit('cancel')
   emit('update:visible', false)
 }
+
+// 监听设置变更
+watch(() => formData.value, (newValue) => {
+  debouncedSaveSettings(newValue)
+}, { deep: true })
 
 // 监听visible变化
 watch(() => props.visible, (newValue) => {

@@ -67,6 +67,18 @@ declare interface API {
     success: boolean;
     error?: string;
   }>;
+
+  // 设置相关方法
+  loadSettings: () => Promise<{
+    language: string;
+    fontSize: number;
+    fontFamily: string;
+  }>;
+  saveSettings: (settings: {
+    language: string;
+    fontSize: number;
+    fontFamily: string;
+  }) => Promise<boolean>;
 }
 
 interface Window {

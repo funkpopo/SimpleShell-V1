@@ -33,7 +33,9 @@ const connectionsFilePath = is.dev
   : path.join(app.getPath('userData'), 'connections.json')
 
 // 设置文件路径
-const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+const settingsPath = is.dev 
+  ? path.join(process.cwd(), 'config.json')
+  : path.join(app.getPath('userData'), 'config.json')
 
 // 输出环境信息
 // console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
@@ -139,10 +141,16 @@ async function getCpuUsage(): Promise<number> {
 // 获取系统信息
 async function getSystemInfo() {
   const cpuUsage = await getCpuUsage()
+  
+  const os = require('os')
+  const cpus = os.cpus()
+  
+  // 获取总内存和可用内存
   const totalMem = os.totalmem()
   const freeMem = os.freemem()
   const usedMem = totalMem - freeMem
-
+  const usedMemPercentage = Math.round((usedMem / totalMem) * 100)
+  
   return {
     osInfo: {
       platform: os.platform(),
@@ -150,15 +158,15 @@ async function getSystemInfo() {
       arch: os.arch()
     },
     cpuInfo: {
-      usage: Math.round(cpuUsage * 100) / 100,
-      model: os.cpus()[0].model,
-      cores: os.cpus().length
+      usage: cpuUsage,
+      model: cpus[0].model,
+      cores: cpus.length
     },
     memoryInfo: {
       total: totalMem,
       free: freeMem,
       used: usedMem,
-      usedPercentage: Math.round((usedMem / totalMem) * 100 * 100) / 100
+      usedPercentage: usedMemPercentage
     }
   }
 }
@@ -953,6 +961,111 @@ app.whenReady().then(() => {
   })
 })
 
+// 加载全局设置
+function loadSettings(): any {
+  try {
+    // 首先检查文件是否存在
+    if (fs.existsSync(settingsPath)) {
+      const fileContent = fs.readFileSync(settingsPath, 'utf-8')
+      // 如果文件存在但为空或内容无效，返回默认设置
+      if (!fileContent.trim()) {
+        console.log('设置文件存在但为空，返回默认设置')
+        return getDefaultSettings()
+      }
+      
+      try {
+        const parsed = JSON.parse(fileContent)
+        console.log('成功加载设置文件')
+        
+        // 处理数组格式的配置文件
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log('检测到数组格式的设置文件，使用第一个元素')
+          return parsed[0]
+        }
+        
+        return parsed
+      } catch (parseError) {
+        console.error('解析设置文件失败:', parseError)
+        return getDefaultSettings()
+      }
+    } else {
+      // 文件不存在的情况，创建一个包含默认设置的新文件
+      console.log('设置文件不存在，创建默认设置文件')
+      const defaultSettings = getDefaultSettings()
+      
+      try {
+        // 确保目录存在
+        const dirPath = path.dirname(settingsPath)
+        if (!fs.existsSync(dirPath)) {
+          fs.mkdirSync(dirPath, { recursive: true })
+        }
+        
+        // 写入默认设置 - 保持数组格式与现有config.json一致
+        fs.writeFileSync(settingsPath, JSON.stringify([defaultSettings], null, 2), 'utf-8')
+        console.log('已创建默认设置文件:', settingsPath)
+      } catch (writeError) {
+        console.error('创建默认设置文件失败:', writeError)
+      }
+      
+      return defaultSettings
+    }
+  } catch (error) {
+    console.error('加载设置时发生错误:', error)
+    return getDefaultSettings()
+  }
+}
+
+// 保存全局设置
+function saveSettings(settings: any): boolean {
+  try {
+    // 确保设置对象格式正确
+    if (!settings || typeof settings !== 'object') {
+      console.error('保存设置失败: 无效的设置对象', settings)
+      return false
+    }
+    
+    // 提取仅需的属性，避免序列化复杂对象可能引起的问题
+    const cleanSettings = {
+      language: settings.language || 'zh-CN',
+      fontSize: settings.fontSize || 14,
+      fontFamily: settings.fontFamily || 'system-ui'
+    }
+    
+    const dirPath = path.dirname(settingsPath)
+    
+    // 确保目录存在
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true })
+    }
+    
+    // 在开发环境中，额外打印路径信息
+    if (is.dev) {
+      console.log('保存设置到:', settingsPath)
+    }
+    
+    // 始终使用数组格式保存，以保持与config.json格式一致
+    const jsonContent = JSON.stringify([cleanSettings], null, 2)
+    
+    // 以同步方式写入文件
+    fs.writeFileSync(settingsPath, jsonContent, { encoding: 'utf-8', flag: 'w' })
+    
+    console.log('设置保存成功')
+    return true
+  } catch (error) {
+    console.error('保存设置失败:', error)
+    return false
+  }
+}
+
+// 获取默认设置
+function getDefaultSettings(): any {
+  return {
+    language: 'zh-CN',
+    fontSize: 14,
+    fontFamily: 'system-ui'
+  }
+}
+
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
@@ -968,18 +1081,9 @@ app.on('window-all-closed', () => {
 // 加载设置
 ipcMain.handle('load-settings', async () => {
   try {
-    if (fs.existsSync(settingsPath)) {
-      const data = await fs.promises.readFile(settingsPath, 'utf8')
-      return JSON.parse(data)
-    }
-    // 返回默认设置
-    return {
-      language: 'zh-CN',
-      fontSize: 14,
-      fontFamily: 'system-ui'
-    }
+    return loadSettings()
   } catch (error) {
-    console.error('加载设置失败:', error)
+    console.error('通过IPC加载设置失败:', error)
     throw error
   }
 })
@@ -987,14 +1091,38 @@ ipcMain.handle('load-settings', async () => {
 // 保存设置
 ipcMain.handle('save-settings', async (_event, settings) => {
   try {
-    await fs.promises.writeFile(settingsPath, JSON.stringify(settings, null, 2))
-    // 通知所有窗口更新设置
-    BrowserWindow.getAllWindows().forEach(win => {
-      win.webContents.send('settings-saved', settings)
-    })
-    return true
+    console.log('收到保存设置请求:', settings)
+    
+    // 确保settings对象只包含需要的属性
+    const cleanSettings = {
+      language: settings.language || 'zh-CN',
+      fontSize: settings.fontSize || 14,
+      fontFamily: settings.fontFamily || 'system-ui'
+    }
+    
+    const success = saveSettings(cleanSettings)
+    
+    if (success) {
+      console.log('保存成功，准备通知所有窗口')
+      // 通知所有窗口更新设置
+      const windows = BrowserWindow.getAllWindows()
+      console.log(`正在向 ${windows.length} 个窗口广播设置更新`)
+      
+      windows.forEach(win => {
+        if (!win.isDestroyed()) {
+          console.log(`向窗口 ${win.id} 发送设置更新通知`)
+          win.webContents.send('settings-saved', cleanSettings)
+        }
+      })
+      
+      console.log('设置更新通知已发送')
+    } else {
+      console.error('保存设置失败')
+    }
+    
+    return success
   } catch (error) {
-    console.error('保存设置失败:', error)
+    console.error('通过IPC保存设置失败:', error)
     throw error
   }
 })

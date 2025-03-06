@@ -11,4 +11,5 @@ out
 # 忽略所有.env.local文件
 .env.local*
 
+config.json
 connections.json

@@ -232,11 +232,40 @@ const settingsDialogVisible = ref(false)
 // 处理设置保存
 const handleSaveSettings = async (settings: any) => {
   try {
-    await window.api.saveSettings(settings)
-    // 这里可以添加保存成功的提示
+    const result = await window.api.saveSettings(settings)
+    if (result) {
+      // 应用设置到当前界面 - 实际应用通过ipcRenderer.on('settings-saved')完成
+      console.log('设置保存成功:', settings)
+      
+      // 显示保存成功提示
+      // 这里可以添加一个临时提示元素或使用toast组件
+      const toast = document.createElement('div')
+      toast.className = 'settings-toast'
+      toast.innerText = '设置已保存并应用'
+      document.body.appendChild(toast)
+      
+      // 2秒后移除提示
+      setTimeout(() => {
+        if (document.body.contains(toast)) {
+          document.body.removeChild(toast)
+        }
+      }, 2000)
+    }
   } catch (error) {
     console.error('保存设置失败:', error)
-    // 这里可以添加保存失败的提示
+    
+    // 显示保存失败提示
+    const toast = document.createElement('div')
+    toast.className = 'settings-toast error'
+    toast.innerText = '设置保存失败'
+    document.body.appendChild(toast)
+    
+    // 2秒后移除提示
+    setTimeout(() => {
+      if (document.body.contains(toast)) {
+        document.body.removeChild(toast)
+      }
+    }, 2000)
   }
 }
 
@@ -843,5 +872,37 @@ onMounted(() => {
 .ai-icon {
   width: 20px;
   height: 20px;
+}
+
+/* 设置保存提示样式 */
+:global(.settings-toast) {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(76, 175, 80, 0.9);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  z-index: 100000;
+  animation: toast-fade-in 0.3s ease-out;
+}
+
+:global(.settings-toast.error) {
+  background-color: rgba(244, 67, 54, 0.9);
+}
+
+@keyframes toast-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 </style>
