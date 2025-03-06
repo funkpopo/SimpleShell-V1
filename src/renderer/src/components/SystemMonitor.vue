@@ -70,6 +70,11 @@ const formatBytes = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+// 格式化百分比，保留2位小数
+const formatPercentage = (value: number): string => {
+  return value.toFixed(2)
+}
+
 // 计算进度条颜色
 const getProgressColor = (value: number) => {
   if (value >= 90) return '#ff4757'
@@ -98,7 +103,7 @@ const memoryProgressStyle = computed(() => ({
       <div 
         class="mini-progress cpu" 
         data-type="CPU"
-        :title="`CPU使用率: ${systemInfo.cpuInfo.usage}%\n型号: ${systemInfo.cpuInfo.model}\n核心数: ${systemInfo.cpuInfo.cores}`"
+        :title="`CPU使用率: ${formatPercentage(systemInfo.cpuInfo.usage)}%\n型号: ${systemInfo.cpuInfo.model}\n核心数: ${systemInfo.cpuInfo.cores}`"
       >
         <div 
           class="mini-progress-bar"
@@ -107,14 +112,14 @@ const memoryProgressStyle = computed(() => ({
             background: 'var(--progress-gradient)'
           }"
         ></div>
-        <span class="mini-progress-text">{{ systemInfo.cpuInfo.usage }}%</span>
+        <span class="mini-progress-text">{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span>
       </div>
 
       <!-- 内存迷你进度条 -->
       <div 
         class="mini-progress memory" 
         data-type="MEM"
-        :title="`内存使用率: ${systemInfo.memoryInfo.usedPercentage}%\n已用: ${formatBytes(systemInfo.memoryInfo.used)}\n总计: ${formatBytes(systemInfo.memoryInfo.total)}`"
+        :title="`内存使用率: ${formatPercentage(systemInfo.memoryInfo.usedPercentage)}%\n已用: ${formatBytes(systemInfo.memoryInfo.used)}\n总计: ${formatBytes(systemInfo.memoryInfo.total)}`"
       >
         <div 
           class="mini-progress-bar"
@@ -123,7 +128,7 @@ const memoryProgressStyle = computed(() => ({
             background: 'var(--progress-gradient)'
           }"
         ></div>
-        <span class="mini-progress-text">{{ systemInfo.memoryInfo.usedPercentage }}%</span>
+        <span class="mini-progress-text">{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span>
       </div>
     </div>
 
@@ -162,7 +167,7 @@ const memoryProgressStyle = computed(() => ({
               class="progress"
               :style="cpuProgressStyle"
             ></div>
-            <span class="progress-text">{{ systemInfo.cpuInfo.usage }}%</span>
+            <span class="progress-text">{{ formatPercentage(systemInfo.cpuInfo.usage) }}%</span>
           </div>
         </div>
       </div>
@@ -184,7 +189,7 @@ const memoryProgressStyle = computed(() => ({
               class="progress"
               :style="memoryProgressStyle"
             ></div>
-            <span class="progress-text">{{ systemInfo.memoryInfo.usedPercentage }}%</span>
+            <span class="progress-text">{{ formatPercentage(systemInfo.memoryInfo.usedPercentage) }}%</span>
           </div>
         </div>
       </div>

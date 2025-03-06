@@ -140,8 +140,43 @@ interface API {
     error?: string;
   }>;
   
+  cancelTransfer(params: { transferId: string }): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+  
   loadSettings: () => Promise<GlobalSettings>
   saveSettings: (settings: GlobalSettings) => Promise<boolean>
+  
+  // 文件传输事件监听
+  onTransferStart: (callback: (data: {
+    id: string;
+    type: 'upload' | 'download';
+    filename: string;
+    path: string;
+    size: number;
+    connectionId: string;
+  }) => void) => () => void;
+  
+  onTransferProgress: (callback: (data: {
+    id: string;
+    transferred: number;
+    progress: number;
+  }) => void) => () => void;
+  
+  onTransferComplete: (callback: (data: {
+    id: string;
+    success: boolean;
+  }) => void) => () => void;
+  
+  onTransferError: (callback: (data: {
+    id: string;
+    error: string;
+  }) => void) => () => void;
+  
+  onTransferCancelled: (callback: (data: {
+    id: string;
+  }) => void) => () => void;
 }
 
 declare global {

@@ -27,6 +27,23 @@ interface FileItem {
   group: string
 }
 
+// 文件传输类型
+type TransferType = 'upload' | 'download'
+
+// 文件传输项
+interface TransferItem {
+  id: string
+  filename: string
+  path: string
+  type: TransferType
+  size: number
+  transferred: number
+  progress: number
+  status: 'pending' | 'transferring' | 'verifying' | 'completed' | 'error' | 'cancelled'
+  error?: string
+  removeTimer?: number // 添加移除计时器ID
+}
+
 // 定义props
 const props = defineProps<{
   connectionId: string
@@ -58,6 +75,30 @@ const deleteProgress = ref({
   completed: 0,
   currentItem: ''
 })
+
+// 文件传输进度状态
+const transferProgress = ref<TransferItem[]>([])
+// 是否显示传输进度浮窗
+const showTransferProgress = ref(false)
+// 传输浮窗位置
+const transferWindowPosition = ref({ x: 20, y: 20 })
+// 是否正在拖动传输浮窗
+const isDraggingTransferWindow = ref(false)
+// 拖动初始位置
+const dragStartPosition = ref({ x: 0, y: 0, windowX: 0, windowY: 0 })
+// 传输浮窗是否折叠
+const isTransferWindowCollapsed = ref(false)
+// 最近传输的文件历史
+const recentTransfers = ref<{id: string, filename: string, type: TransferType, status: string}[]>([])
+// 在没有显示传输窗口时显示的最新传输提示
+const latestTransferNotification = ref<{message: string, type: 'success' | 'error' | 'info', visible: boolean}>({
+  message: '',
+  type: 'info',
+  visible: false
+})
+// 最新传输提示计时器
+let latestTransferNotificationTimer: number | null = null
+
 // 排序方式
 const sortBy = ref<'name' | 'size' | 'modifyTime'>('name')
 const sortOrder = ref<'asc' | 'desc'>('asc')
@@ -262,6 +303,7 @@ const downloadSelectedFiles = async () => {
       }
     }
     clearSelection()
+    // 成功通知由传输事件处理，此处不再显示
   } catch (err: any) {
     error.value = err.message || '下载文件时发生错误'
   }
@@ -280,41 +322,22 @@ const uploadFiles = async (targetPath?: string) => {
     })
     
     if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
-      let successCount = 0
-      let failCount = 0
-      
       // 使用传入的目标路径或当前路径
       const uploadPath = targetPath || currentPath.value
       
+      // 启动所有文件上传
       for (const filePath of result.filePaths) {
         try {
-          const uploadResult = await window.api.sftpUploadFile({
+          await window.api.sftpUploadFile({
             connectionId: props.connectionId,
             localPath: filePath,
             remotePath: uploadPath
           })
-          
-          if (uploadResult.success) {
-            successCount++
-          } else {
-            failCount++
-            console.error(`上传文件 ${filePath} 失败:`, uploadResult.error)
-          }
+          // 成功通知由传输事件处理，此处不再显示
         } catch (err) {
-          failCount++
           console.error(`上传文件 ${filePath} 时发生错误:`, err)
         }
       }
-      
-      // 显示上传结果
-      if (successCount > 0) {
-        showSuccessMessage(`成功上传 ${successCount} 个文件${failCount > 0 ? `，${failCount} 个文件上传失败` : ''}`)
-      } else if (failCount > 0) {
-        error.value = `所有文件上传失败`
-      }
-      
-      // 刷新当前目录
-      await loadCurrentDirectory()
     }
   } catch (err: any) {
     error.value = err.message || '上传文件时发生错误'
@@ -654,6 +677,25 @@ watch([fileList, sortBy, sortOrder], () => {
   sortFiles()
 }, { deep: true })
 
+// 监听传输进度变化，确保上传完成后刷新文件列表
+watch(transferProgress, (newProgress, oldProgress) => {
+  // 检查是否有新完成的上传
+  for (let i = 0; i < newProgress.length; i++) {
+    const newItem = newProgress[i]
+    const oldItem = oldProgress[i]
+    
+    // 如果是上传项，且状态从transferring变为completed或verifying
+    if (newItem && oldItem && 
+        newItem.type === 'upload' && 
+        oldItem.status === 'transferring' && 
+        (newItem.status === 'completed' || newItem.status === 'verifying')) {
+      console.log('检测到上传完成状态变化，刷新文件列表')
+      loadCurrentDirectory()
+      break
+    }
+  }
+}, { deep: true })
+
 // 监听连接ID变化
 watch(() => props.connectionId, (newId, oldId) => {
   console.log('连接ID变化:', { oldId, newId })
@@ -719,12 +761,457 @@ const handleWindowResize = () => {
       }
     }
   }
+  
+  // 确保传输浮窗在可视区域内
+  if (showTransferProgress.value) {
+    adjustTransferWindowPosition()
+  }
+}
+
+// 调整传输浮窗位置，确保在可视区域内
+const adjustTransferWindowPosition = () => {
+  const container = document.querySelector('.file-list-container') as HTMLElement
+  if (!container) return
+  
+  const containerRect = container.getBoundingClientRect()
+  const transferWindow = document.querySelector('.transfer-progress-modal') as HTMLElement
+  if (!transferWindow) return
+  
+  const transferRect = transferWindow.getBoundingClientRect()
+  
+  let newX = transferWindowPosition.value.x
+  let newY = transferWindowPosition.value.y
+  
+  // 确保不超出右边界
+  if (newX + transferRect.width > containerRect.width) {
+    newX = containerRect.width - transferRect.width - 10
+  }
+  
+  // 确保不超出左边界
+  if (newX < 10) {
+    newX = 10
+  }
+  
+  // 确保不超出下边界
+  if (newY + transferRect.height > containerRect.height) {
+    newY = containerRect.height - transferRect.height - 10
+  }
+  
+  // 确保不超出上边界
+  if (newY < 10) {
+    newY = 10
+  }
+  
+  transferWindowPosition.value = { x: newX, y: newY }
+}
+
+// 开始拖动传输浮窗
+const startDragTransferWindow = (e: MouseEvent) => {
+  // 如果点击的是按钮等控件，不启动拖动
+  if ((e.target as HTMLElement).closest('.transfer-close-btn, .transfer-toggle-btn, .transfer-cancel-btn')) {
+    return
+  }
+  
+  isDraggingTransferWindow.value = true
+  dragStartPosition.value = {
+    x: e.clientX,
+    y: e.clientY,
+    windowX: transferWindowPosition.value.x,
+    windowY: transferWindowPosition.value.y
+  }
+  
+  document.addEventListener('mousemove', dragTransferWindow)
+  document.addEventListener('mouseup', stopDragTransferWindow)
+  
+  // 防止选中文本
+  e.preventDefault()
+}
+
+// 拖动传输浮窗
+const dragTransferWindow = (e: MouseEvent) => {
+  if (!isDraggingTransferWindow.value) return
+  
+  const deltaX = e.clientX - dragStartPosition.value.x
+  const deltaY = e.clientY - dragStartPosition.value.y
+  
+  transferWindowPosition.value = {
+    x: dragStartPosition.value.windowX + deltaX,
+    y: dragStartPosition.value.windowY + deltaY
+  }
+  
+  // 边界检查
+  adjustTransferWindowPosition()
+}
+
+// 停止拖动传输浮窗
+const stopDragTransferWindow = () => {
+  isDraggingTransferWindow.value = false
+  document.removeEventListener('mousemove', dragTransferWindow)
+  document.removeEventListener('mouseup', stopDragTransferWindow)
+}
+
+// 切换传输浮窗折叠状态
+const toggleTransferWindowCollapse = () => {
+  isTransferWindowCollapsed.value = !isTransferWindowCollapsed.value
+}
+
+// 显示传输完成提示（当传输窗口未显示时）
+const showTransferNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  // 如果传输窗口已显示，则不显示额外通知
+  if (showTransferProgress.value) return
+  
+  // 清除之前的计时器
+  if (latestTransferNotificationTimer !== null) {
+    clearTimeout(latestTransferNotificationTimer)
+  }
+  
+  // 设置新通知
+  latestTransferNotification.value = {
+    message,
+    type,
+    visible: true
+  }
+  
+  // 5秒后自动清除
+  latestTransferNotificationTimer = window.setTimeout(() => {
+    latestTransferNotification.value.visible = false
+    latestTransferNotificationTimer = null
+  }, 5000)
+}
+
+// 文件传输处理
+const initFileTransferHandlers = () => {
+  // 开始传输事件
+  const unsubTransferStart = window.api.onTransferStart((data) => {
+    // 添加到传输列表
+    transferProgress.value.push({
+      id: data.id,
+      filename: data.filename,
+      path: data.path, 
+      type: data.type,
+      size: data.size,
+      transferred: 0,
+      progress: 0,
+      status: 'transferring'
+    })
+    
+    // 显示传输进度浮窗
+    showTransferProgress.value = true
+  })
+  
+  // 传输进度更新事件
+  const unsubTransferProgress = window.api.onTransferProgress((data) => {
+    // 查找对应的传输项
+    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    if (transferItem) {
+      transferItem.transferred = data.transferred
+      transferItem.progress = data.progress
+      
+      // 当上传进度达到100%时立即刷新文件列表
+      if (transferItem.type === 'upload' && data.progress === 100 && transferItem.status === 'transferring') {
+        console.log('上传进度达到100%，立即刷新文件列表')
+        loadCurrentDirectory()
+      }
+    }
+  })
+  
+  // 传输完成事件
+  const unsubTransferComplete = window.api.onTransferComplete((data) => {
+    // 查找对应的传输项
+    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    if (transferItem) {
+      // 设置为验证中状态
+      transferItem.status = 'verifying'
+      transferItem.progress = 100
+      transferItem.transferred = transferItem.size // 确保进度显示为100%
+      
+      // 对于上传操作，立即刷新文件列表，不等待验证完成
+      if (transferItem.type === 'upload') {
+        console.log('上传完成，立即刷新文件列表')
+        loadCurrentDirectory()
+      }
+      
+      // 验证文件是否成功上传/下载
+      verifyTransferSuccess(transferItem).then(success => {
+        if (success) {
+          // 更新为完成状态
+          transferItem.status = 'completed'
+          
+          // 显示成功消息
+          showSuccessMessage(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 成功`)
+          
+          // 添加到最近传输历史
+          addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'completed')
+          
+          // 如果传输窗口没有显示，则显示通知
+          if (!showTransferProgress.value) {
+            showTransferNotification(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 成功`, 'success')
+          }
+          
+          // 设置自动移除计时器，完成后3秒移除（比原来快一些）
+          scheduleItemRemoval(transferItem, 3000)
+        } else {
+          // 验证失败，标记为错误
+          transferItem.status = 'error'
+          transferItem.error = '文件传输验证失败'
+          
+          // 显示错误消息
+          error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 验证失败`
+          
+          // 添加到最近传输历史
+          addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'error')
+          
+          // 如果传输窗口没有显示，则显示通知
+          if (!showTransferProgress.value) {
+            showTransferNotification(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 验证失败`, 'error')
+          }
+          
+          // 设置自动移除计时器
+          scheduleItemRemoval(transferItem, 8000)
+        }
+        
+        // 无论是上传还是下载都刷新当前目录
+        loadCurrentDirectory()
+      }).catch(err => {
+        console.error(`验证传输 ${transferItem.filename} 失败:`, err)
+        
+        // 更新为错误状态
+        transferItem.status = 'error'
+        transferItem.error = `验证失败: ${err.message || '未知错误'}`
+        
+        // 显示错误消息
+        error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 验证失败: ${err.message || '未知错误'}`
+        
+        // 添加到最近传输历史
+        addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'error')
+        
+        // 刷新当前目录
+        loadCurrentDirectory()
+        
+        // 设置自动移除计时器
+        scheduleItemRemoval(transferItem, 8000)
+      })
+    }
+    
+    // 检查是否所有传输都已完成
+    checkTransferComplete()
+  })
+  
+  // 传输错误事件
+  const unsubTransferError = window.api.onTransferError((data) => {
+    // 查找对应的传输项
+    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    if (transferItem) {
+      transferItem.status = 'error'
+      transferItem.error = data.error
+      
+      // 显示错误消息
+      error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 失败: ${data.error}`
+      
+      // 添加到最近传输历史
+      addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'error')
+      
+      // 刷新当前目录，以防文件状态不一致
+      loadCurrentDirectory()
+      
+      // 如果传输窗口没有显示，则显示通知
+      if (!showTransferProgress.value) {
+        showTransferNotification(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 失败`, 'error')
+      }
+      
+      // 设置自动移除计时器，错误状态保留较长时间（8秒）以便用户查看
+      scheduleItemRemoval(transferItem, 8000)
+    }
+    
+    // 检查是否所有传输都已完成
+    checkTransferComplete()
+  })
+  
+  // 传输取消事件
+  const unsubTransferCancelled = window.api.onTransferCancelled((data) => {
+    // 查找对应的传输项
+    const transferItem = transferProgress.value.find(item => item.id === data.id)
+    if (transferItem) {
+      transferItem.status = 'cancelled'
+      transferItem.error = '用户取消传输'
+      
+      // 添加到最近传输历史
+      addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'cancelled')
+      
+      // 刷新当前目录，以防文件状态不一致
+      loadCurrentDirectory()
+      
+      // 设置自动移除计时器，取消状态保留较短时间（2秒）
+      scheduleItemRemoval(transferItem, 2000)
+    }
+    
+    // 检查是否所有传输都已完成
+    checkTransferComplete()
+  })
+  
+  // 返回清理函数
+  return () => {
+    unsubTransferStart()
+    unsubTransferProgress()
+    unsubTransferComplete()
+    unsubTransferError()
+    unsubTransferCancelled()
+  }
+}
+
+// 添加到最近传输历史
+const addToRecentTransfers = (id: string, filename: string, type: TransferType, status: string) => {
+  // 限制历史记录数量，保留最新的10条
+  if (recentTransfers.value.length >= 10) {
+    recentTransfers.value.shift() // 移除最旧的记录
+  }
+  
+  // 添加新记录
+  recentTransfers.value.push({
+    id,
+    filename,
+    type,
+    status
+  })
+}
+
+// 为传输项设置自动移除计时器
+const scheduleItemRemoval = (item: TransferItem, delay = 5000) => {
+  // 清除之前可能存在的计时器
+  if (item.removeTimer) {
+    clearTimeout(item.removeTimer)
+  }
+  
+  console.log(`安排移除传输项：${item.filename}，状态：${item.status}，延迟：${delay}ms`)
+  
+  // 设置新的计时器，默认5秒后自动移除（可自定义）
+  item.removeTimer = window.setTimeout(() => {
+    console.log(`执行移除传输项：${item.filename}，状态：${item.status}`)
+    // 移除该项
+    transferProgress.value = transferProgress.value.filter(i => i.id !== item.id)
+    
+    // 如果没有正在进行的传输，隐藏浮窗
+    const hasActiveTransfers = transferProgress.value.some(
+      i => i.status === 'pending' || i.status === 'transferring'
+    )
+    
+    // 如果无正在传输的项，且所有项目都已移除，隐藏传输窗口
+    if (!hasActiveTransfers && transferProgress.value.length === 0) {
+      console.log('所有传输项已完成，隐藏传输窗口')
+      setTimeout(() => {
+        showTransferProgress.value = false
+      }, 500) // 进一步减少等待时间，提升体验
+    }
+  }, delay)
+}
+
+// 清除所有传输项的计时器
+const clearAllRemovalTimers = () => {
+  transferProgress.value.forEach(item => {
+    if (item.removeTimer) {
+      clearTimeout(item.removeTimer)
+      item.removeTimer = undefined
+    }
+  })
+}
+
+// 检查所有传输是否完成
+const checkTransferComplete = () => {
+  // 检查是否所有传输都已完成（没有处于进行中状态的传输）
+  const allCompleted = !transferProgress.value.some(
+    item => item.status === 'pending' || item.status === 'transferring'
+  )
+  
+  // 如果全部完成，显示总结性消息
+  if (allCompleted && transferProgress.value.length > 0) {
+    // 计算成功、失败和取消的数量
+    const completedCount = transferProgress.value.filter(item => item.status === 'completed').length
+    const errorCount = transferProgress.value.filter(item => item.status === 'error').length
+    const cancelledCount = transferProgress.value.filter(item => item.status === 'cancelled').length
+    
+    // 显示总结性消息
+    if (completedCount > 0 || errorCount > 0 || cancelledCount > 0) {
+      let message = '传输完成：'
+      if (completedCount > 0) message += `${completedCount}个成功`
+      if (errorCount > 0) message += `${completedCount > 0 ? '，' : ''}${errorCount}个失败`
+      if (cancelledCount > 0) message += `${completedCount > 0 || errorCount > 0 ? '，' : ''}${cancelledCount}个已取消`
+      
+      showSuccessMessage(message)
+      
+      // 如果传输窗口没有显示，也显示通知
+      if (!showTransferProgress.value) {
+        showTransferNotification(message, completedCount > 0 ? 'success' : 'error')
+      }
+    }
+  }
+}
+
+// 关闭传输进度浮窗
+const closeTransferProgress = () => {
+  showTransferProgress.value = false
+  // 清除所有自动移除计时器
+  clearAllRemovalTimers()
 }
 
 // 处理背景区域上传文件
 const handleBackgroundUpload = async (e: MouseEvent) => {
   e.preventDefault()
   await uploadFiles()
+}
+
+// 取消文件传输
+const cancelTransfer = async (transferId: string) => {
+  try {
+    // 查找对应的传输项
+    const transferItem = transferProgress.value.find(item => item.id === transferId)
+    if (!transferItem || transferItem.status !== 'transferring') {
+      return
+    }
+    
+    // 调用API取消传输
+    const result = await window.api.cancelTransfer({
+      transferId
+    })
+    
+    if (result.success) {
+      // 更新状态为已取消
+      transferItem.status = 'cancelled'
+      transferItem.error = '用户取消传输'
+      
+      // 显示提示
+      showSuccessMessage(`已取消${transferItem.type === 'upload' ? '上传' : '下载'}文件: ${transferItem.filename}`)
+      
+      // 刷新文件列表
+      loadCurrentDirectory()
+      
+      // 设置自动移除计时器
+      scheduleItemRemoval(transferItem, 2000)
+    } else {
+      // 显示错误
+      error.value = `取消传输失败: ${result.error || '未知错误'}`
+    }
+  } catch (err: any) {
+    console.error('取消传输失败:', err)
+    error.value = `取消传输失败: ${err.message || '未知错误'}`
+  }
+}
+
+// 直接清除传输项
+const clearTransferItem = (transferId: string) => {
+  const transferItem = transferProgress.value.find(item => item.id === transferId)
+  if (transferItem) {
+    // 立即从列表中移除
+    transferProgress.value = transferProgress.value.filter(item => item.id !== transferId)
+    
+    // 如果没有正在进行的传输和剩余项，隐藏传输窗口
+    const hasActiveTransfers = transferProgress.value.some(
+      i => i.status === 'pending' || i.status === 'transferring'
+    )
+    
+    if (!hasActiveTransfers && transferProgress.value.length === 0) {
+      showTransferProgress.value = false
+    }
+  }
 }
 
 // 组件挂载时加载目录
@@ -742,6 +1229,14 @@ onMounted(() => {
   
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleWindowResize)
+  
+  // 初始化文件传输事件监听
+  const cleanupTransferHandlers = initFileTransferHandlers()
+  
+  // 组件卸载时清理监听器
+  onBeforeUnmount(() => {
+    cleanupTransferHandlers()
+  })
 })
 
 // 组件卸载时移除事件监听
@@ -753,7 +1248,87 @@ onBeforeUnmount(() => {
   if (successMessageTimer !== null) {
     clearTimeout(successMessageTimer)
   }
+  
+  if (latestTransferNotificationTimer !== null) {
+    clearTimeout(latestTransferNotificationTimer)
+  }
+  
+  // 清除所有传输项的计时器
+  clearAllRemovalTimers()
 })
+
+// 验证文件传输是否成功
+const verifyTransferSuccess = async (item: TransferItem): Promise<boolean> => {
+  try {
+    console.log(`开始验证传输项: ${item.filename}`)
+    
+    // 根据传输类型确定验证方法
+    if (item.type === 'upload') {
+      // 上传验证：检查文件是否存在于远程目录
+      // 构建完整的远程路径
+      const remotePath = item.path.endsWith('/') 
+        ? `${item.path}${item.filename}`
+        : `${item.path}/${item.filename}`
+      
+      console.log(`验证上传文件: ${remotePath}`)
+      
+      // 尝试多次验证，有时文件可能需要一点时间才能在服务器上可见
+      let retryCount = 0;
+      const maxRetries = 3;
+      
+      while (retryCount < maxRetries) {
+        // 通过SFTP读取目录来检查文件是否存在
+        const result = await window.api.sftpReadDir({
+          connectionId: props.connectionId,
+          path: item.path
+        })
+        
+        // 检查文件是否存在并获取其大小
+        if (result.success && result.files) {
+          const fileInfo = result.files.find(file => file.name === item.filename)
+          
+          if (fileInfo) {
+            console.log(`验证结果: 文件存在, 大小: ${fileInfo.size}, 期望大小: ${item.size}`)
+            
+            // 验证文件大小是否与上传大小一致(允许5%的误差)
+            const sizeMatch = Math.abs(fileInfo.size - item.size) <= (item.size * 0.05)
+            
+            // 如果验证成功，再次刷新文件列表确保显示
+            if (sizeMatch && item.type === 'upload') {
+              loadCurrentDirectory()
+            }
+            
+            return sizeMatch
+          }
+        }
+        
+        // 如果没有找到文件，等待一段时间后重试
+        retryCount++;
+        if (retryCount < maxRetries) {
+          console.log(`未找到文件，等待后重试 (${retryCount}/${maxRetries})`)
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // 每次重试前都刷新一次目录
+          if (item.type === 'upload') {
+            loadCurrentDirectory()
+          }
+        }
+      }
+      
+      console.log('验证失败: 文件不存在或无法访问')
+      return false
+    } else if (item.type === 'download') {
+      // 下载验证：这里不需要特别验证，因为文件直接保存到本地文件系统
+      // 本地文件系统的保存通常是由操作系统处理的，如果出错会有异常
+      return true
+    }
+    
+    return false
+  } catch (err) {
+    console.error(`验证传输失败:`, err)
+    return false
+  }
+}
 </script>
 
 <template>
@@ -786,6 +1361,20 @@ onBeforeUnmount(() => {
     <div v-if="successMessage" class="success-message">
       {{ successMessage }}
       <button class="close-success" @click="successMessage = ''">×</button>
+    </div>
+    
+    <!-- 传输完成提示（当传输窗口未显示时） -->
+    <div 
+      v-if="latestTransferNotification.visible" 
+      class="transfer-notification"
+      :class="{ 
+        'success': latestTransferNotification.type === 'success',
+        'error': latestTransferNotification.type === 'error',
+        'dark-theme': isDarkTheme 
+      }"
+    >
+      {{ latestTransferNotification.message }}
+      <button class="close-notification" @click="latestTransferNotification.visible = false">×</button>
     </div>
     
     <!-- 文件列表 -->
@@ -873,7 +1462,7 @@ onBeforeUnmount(() => {
             <span class="file-icon">
               {{ file.type === 'directory' ? '📁' : '📄' }}
             </span>
-            {{ file.name }}
+            <span class="file-name-text" :title="file.name">{{ file.name }}</span>
           </div>
           <div class="size-cell">
             {{ file.type === 'directory' ? '-' : formatFileSize(file.size) }}
@@ -1000,6 +1589,141 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </div>
+    
+    <!-- 文件传输进度浮窗 -->
+    <div 
+      v-if="showTransferProgress && transferProgress.length > 0" 
+      class="transfer-progress-modal"
+      :class="{ 
+        'dark-theme': props.isDarkTheme,
+        'collapsed': isTransferWindowCollapsed
+      }"
+      :style="{ 
+        left: `${transferWindowPosition.x}px`, 
+        top: `${transferWindowPosition.y}px` 
+      }"
+    >
+      <div 
+        class="transfer-header"
+        @mousedown="startDragTransferWindow"
+      >
+        <span class="transfer-title">文件传输</span>
+        <div class="transfer-header-right">
+          <button 
+            class="transfer-toggle-btn" 
+            @click="toggleTransferWindowCollapse"
+            :title="isTransferWindowCollapsed ? '展开' : '折叠'"
+          >
+            {{ isTransferWindowCollapsed ? '＋' : '－' }}
+          </button>
+          <span v-if="!isTransferWindowCollapsed" class="transfer-count">{{ transferProgress.length }}个任务</span>
+          <button class="transfer-close-btn" @click="closeTransferProgress">×</button>
+        </div>
+      </div>
+      
+      <div v-if="!isTransferWindowCollapsed" class="transfer-items">
+        <div 
+          v-for="item in transferProgress" 
+          :key="item.id" 
+          class="transfer-item"
+          :class="{
+            'completed': item.status === 'completed',
+            'error': item.status === 'error',
+            'cancelled': item.status === 'cancelled'
+          }"
+        >
+          <div class="transfer-item-header">
+            <span class="transfer-filename" :title="item.filename">{{ item.filename }}</span>
+            <div class="transfer-actions">
+              <span class="transfer-type">{{ item.type === 'upload' ? '上传' : '下载' }}</span>
+              <button 
+                v-if="item.status === 'transferring'" 
+                class="transfer-cancel-btn"
+                @click="cancelTransfer(item.id)"
+                title="取消传输"
+              >
+                ✕
+              </button>
+              <span 
+                v-else-if="item.status === 'completed'" 
+                class="transfer-status-indicator completed"
+                title="传输完成"
+              >
+                ✓
+              </span>
+              <span 
+                v-else-if="item.status === 'verifying'" 
+                class="transfer-status-indicator verifying"
+                title="正在验证"
+              >
+                ⟳
+              </span>
+              <span 
+                v-else-if="item.status === 'error'" 
+                class="transfer-status-indicator error"
+                title="传输失败"
+              >
+                !
+              </span>
+              <span 
+                v-else-if="item.status === 'cancelled'" 
+                class="transfer-status-indicator cancelled"
+                title="已取消"
+              >
+                -
+              </span>
+              <!-- 添加清除按钮，仅对于非传输中和非验证中状态显示 -->
+              <button 
+                v-if="item.status !== 'transferring' && item.status !== 'verifying'" 
+                class="transfer-clear-btn"
+                @click="clearTransferItem(item.id)"
+                title="清除此项"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+          
+          <div class="transfer-info">
+            <span class="transfer-size">
+              {{ formatFileSize(item.transferred) }} / {{ formatFileSize(item.size) }}
+            </span>
+            <span class="transfer-progress-text" :class="{ 
+              'completed': item.status === 'completed',
+              'verifying': item.status === 'verifying'
+            }">
+              {{ item.status === 'completed' ? '已完成' : 
+                 (item.status === 'verifying' ? '验证中' : 
+                  (item.status === 'error' ? '失败' : 
+                   (item.status === 'cancelled' ? '已取消' : `${item.progress}%`))) }}
+            </span>
+          </div>
+          
+          <div class="progress-bar-container">
+            <div 
+              class="progress-bar" 
+              :style="{ width: `${item.progress}%` }"
+              :class="{
+                'completed': item.status === 'completed',
+                'verifying': item.status === 'verifying',
+                'error': item.status === 'error',
+                'cancelled': item.status === 'cancelled',
+                'progress-animation': item.progress === 100 && item.status === 'completed',
+                'verifying-animation': item.status === 'verifying'
+              }"
+            ></div>
+          </div>
+          
+          <div v-if="item.status === 'error'" class="transfer-error">
+            {{ item.error }}
+          </div>
+          
+          <div v-if="item.status === 'cancelled'" class="transfer-cancelled">
+            已取消传输
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1103,7 +1827,9 @@ onBeforeUnmount(() => {
 .dark-theme .delete-icon,
 .dark-theme .download-icon,
 .dark-theme .plus-icon,
-.dark-theme .edit-icon {
+.dark-theme .back-icon,
+.dark-theme .edit-icon,
+.dark-theme .openfolder-icon {
   opacity: 1;
 }
 
@@ -1114,7 +1840,9 @@ onBeforeUnmount(() => {
 .menu-item:hover .delete-icon,
 .menu-item:hover .download-icon,
 .menu-item:hover .plus-icon,
-.menu-item:hover .edit-icon {
+.menu-item:hover .back-icon,
+.menu-item:hover .edit-icon,
+.menu-item:hover .openfolder-icon {
   opacity: 1;
 }
 
@@ -1187,6 +1915,67 @@ onBeforeUnmount(() => {
   font-size: 20px;
   cursor: pointer;
   padding: 0 5px;
+}
+
+/* 传输完成提示样式 */
+.transfer-notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  background-color: #2196f3;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 250px;
+  max-width: 400px;
+  animation: notification-slide-in 0.3s ease-out;
+}
+
+.transfer-notification.success {
+  background-color: #4caf50;
+}
+
+.transfer-notification.error {
+  background-color: #f44336;
+}
+
+.dark-theme .transfer-notification {
+  background-color: #1565c0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .transfer-notification.success {
+  background-color: #2e7d32;
+}
+
+.dark-theme .transfer-notification.error {
+  background-color: #c62828;
+}
+
+@keyframes notification-slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.close-notification {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 0 0 16px;
+  margin-left: 10px;
 }
 
 .file-list-container {
@@ -1305,10 +2094,18 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .file-icon {
   font-size: 16px;
+  flex-shrink: 0;
+}
+
+.file-name-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .size-cell,
@@ -1478,7 +2275,424 @@ onBeforeUnmount(() => {
   transition: width 0.3s ease;
 }
 
+.progress-bar.error {
+  background-color: #f44336;
+}
+
 .dark-theme .progress-bar {
   background-color: #4caf50;
+}
+
+.dark-theme .progress-bar.error {
+  background-color: #f44336;
+}
+
+/* 文件传输进度浮窗样式 */
+.transfer-progress-modal {
+  position: absolute;
+  width: 400px;
+  max-width: 90%;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10000;
+  transition: width 0.3s, height 0.3s;
+}
+
+.dark-theme .transfer-progress-modal {
+  background-color: #333333;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* 折叠状态 */
+.transfer-progress-modal.collapsed {
+  width: 220px;
+  height: auto;
+}
+
+.transfer-header {
+  background-color: #f5f5f5;
+  padding: 10px 15px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+}
+
+.dark-theme .transfer-header {
+  background-color: #444444;
+  border-bottom-color: #555555;
+}
+
+.transfer-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #333333;
+}
+
+.dark-theme .transfer-title {
+  color: #ffffff;
+}
+
+.transfer-count {
+  color: #666666;
+  font-size: 12px;
+  margin-right: 10px;
+}
+
+.dark-theme .transfer-count {
+  color: #aaaaaa;
+}
+
+.transfer-items {
+  padding: 10px;
+  overflow-y: auto;
+  max-height: 320px;
+}
+
+.transfer-item {
+  margin-bottom: 15px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  padding: 10px;
+  border-left: 3px solid #4caf50;
+}
+
+.dark-theme .transfer-item {
+  background-color: #3a3a3a;
+  border-left-color: #4caf50;
+}
+
+.transfer-item.completed {
+  border-left-color: #4caf50;
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+.dark-theme .transfer-item.completed {
+  border-left-color: #4caf50;
+  background-color: rgba(76, 175, 80, 0.2);
+}
+
+.transfer-item.error {
+  border-left-color: #f44336;
+  background-color: rgba(244, 67, 54, 0.1);
+}
+
+.dark-theme .transfer-item.error {
+  border-left-color: #f44336;
+  background-color: rgba(244, 67, 54, 0.2);
+}
+
+.transfer-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.transfer-filename {
+  font-weight: 500;
+  color: #333333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.dark-theme .transfer-filename {
+  color: #ffffff;
+}
+
+.transfer-type {
+  font-size: 11px;
+  color: #666666;
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.dark-theme .transfer-type {
+  color: #cccccc;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.transfer-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.transfer-size {
+  color: #666666;
+}
+
+.dark-theme .transfer-size {
+  color: #aaaaaa;
+}
+
+.transfer-progress-text {
+  font-weight: 500;
+  color: #333333;
+}
+
+.dark-theme .transfer-progress-text {
+  color: #ffffff;
+}
+
+.transfer-error {
+  color: #f44336;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.transfer-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transfer-close-btn {
+  background: none;
+  border: none;
+  color: #666666;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.dark-theme .transfer-close-btn {
+  color: #aaaaaa;
+}
+
+.transfer-toggle-btn {
+  background: none;
+  border: none;
+  color: #666666;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  text-align: center;
+}
+
+.dark-theme .transfer-toggle-btn {
+  color: #aaaaaa;
+}
+
+.transfer-item.cancelled {
+  border-left-color: #9e9e9e;
+  background-color: rgba(158, 158, 158, 0.1);
+}
+
+.dark-theme .transfer-item.cancelled {
+  border-left-color: #9e9e9e;
+  background-color: rgba(158, 158, 158, 0.2);
+}
+
+.transfer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.transfer-cancel-btn {
+  background: none;
+  border: none;
+  color: #f44336;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.transfer-cancel-btn:hover {
+  background-color: rgba(244, 67, 54, 0.1);
+}
+
+.dark-theme .transfer-cancel-btn {
+  color: #ff7043;
+}
+
+.dark-theme .transfer-cancel-btn:hover {
+  background-color: rgba(255, 112, 67, 0.2);
+}
+
+.progress-bar.cancelled {
+  background-color: #9e9e9e;
+}
+
+.dark-theme .progress-bar.cancelled {
+  background-color: #757575;
+}
+
+.transfer-cancelled {
+  color: #757575;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.dark-theme .transfer-cancelled {
+  color: #aaaaaa;
+}
+
+.transfer-status-indicator {
+  font-size: 16px;
+  margin-left: 5px;
+}
+
+.transfer-status-indicator.completed {
+  color: #4caf50;
+}
+
+.transfer-status-indicator.error {
+  color: #f44336;
+}
+
+.transfer-status-indicator.cancelled {
+  color: #9e9e9e;
+}
+
+.transfer-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  margin-left: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.transfer-status-indicator.completed {
+  color: #4caf50;
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+.transfer-status-indicator.error {
+  color: #f44336;
+  background-color: rgba(244, 67, 54, 0.1);
+}
+
+.transfer-status-indicator.cancelled {
+  color: #9e9e9e;
+  background-color: rgba(158, 158, 158, 0.1);
+}
+
+.transfer-clear-btn {
+  background: none;
+  border: none;
+  color: #9e9e9e;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 5px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.transfer-clear-btn:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+  color: #666;
+}
+
+.dark-theme .transfer-clear-btn {
+  color: #aaa;
+}
+
+.dark-theme .transfer-clear-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ddd;
+}
+
+/* 动画 */
+.progress-bar.progress-animation {
+  animation: pulse-success 1.5s ease-in-out;
+}
+
+@keyframes pulse-success {
+  0% { background-color: #4caf50; }
+  50% { background-color: #81c784; }
+  100% { background-color: #4caf50; }
+}
+
+.dark-theme .progress-bar.progress-animation {
+  animation: pulse-success-dark 1.5s ease-in-out;
+}
+
+@keyframes pulse-success-dark {
+  0% { background-color: #2e7d32; }
+  50% { background-color: #4caf50; }
+  100% { background-color: #2e7d32; }
+}
+
+.transfer-progress-text.completed {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.dark-theme .transfer-progress-text.completed {
+  color: #81c784;
+}
+
+/* 添加验证中状态的CSS样式 */
+.transfer-status-indicator.verifying {
+  color: #2196f3;
+  background-color: rgba(33, 150, 243, 0.1);
+  animation: rotate 1.5s linear infinite;
+}
+
+.transfer-progress-text.verifying {
+  color: #2196f3;
+  font-weight: 500;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 添加验证中进度条的样式 */
+.progress-bar.verifying {
+  background-color: #2196f3;
+}
+
+.progress-bar.verifying-animation {
+  animation: pulse-verifying 2s ease-in-out infinite;
+  background-image: linear-gradient(
+    -45deg,
+    rgba(33, 150, 243, 0.8) 25%,
+    rgba(33, 150, 243, 1) 50%,
+    rgba(33, 150, 243, 0.8) 75%
+  );
+  background-size: 200% 100%;
+  transition: background-position 0.5s ease-out;
+}
+
+@keyframes pulse-verifying {
+  0% { background-position: 100% 0%; }
+  100% { background-position: 0% 0%; }
+}
+
+.dark-theme .progress-bar.verifying {
+  background-color: #1976d2;
 }
 </style> 

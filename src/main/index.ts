@@ -9,6 +9,9 @@ import { Client } from 'ssh2'
 import * as pty from 'node-pty'
 import SftpClient from 'ssh2-sftp-client'
 
+// 主窗口实例
+let mainWindow: BrowserWindow | null = null
+
 // 定义连接配置的数据类型
 interface Connection {
   id: string
@@ -176,6 +179,13 @@ const activeConnections = new Map()
 
 // 记录所有活动的SFTP连接
 const activeSftpConnections = new Map<string, any>()
+
+// 存储活跃的传输任务
+const activeTransfers = new Map<string, { 
+  readStream?: any, 
+  writeStream?: any, 
+  connectionId: string 
+}>();
 
 // SSH会话管理
 ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
@@ -645,7 +655,7 @@ function closeTerminal(options: { id: string }): void {
 
 function createWindow(): void {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 900,
     height: 670,
     show: false,
@@ -830,8 +840,82 @@ app.whenReady().then(() => {
           return { success: false, error: '用户取消下载' }
         }
 
-        await sftp.fastGet(remotePath, result.filePath)
-        return { success: true }
+        // 创建唯一的传输ID
+        const transferId = `download-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        
+        // 获取文件信息以获取大小
+        const stats = await sftp.stat(remotePath);
+        const fileSize = stats.size;
+        
+        // 发送开始传输事件
+        if (mainWindow) {
+          mainWindow.webContents.send('sftp:transferStart', {
+            id: transferId,
+            type: 'download',
+            filename: path.basename(remotePath),
+            path: remotePath,
+            size: fileSize,
+            connectionId
+          });
+        }
+
+        // 使用stream进行传输并跟踪进度
+        const readStream = await sftp.createReadStream(remotePath);
+        const writeStream = fs.createWriteStream(result.filePath);
+        
+        let transferred = 0;
+        
+        readStream.on('data', (chunk) => {
+          transferred += chunk.length;
+          
+          // 发送进度更新
+          if (mainWindow) {
+            mainWindow.webContents.send('sftp:transferProgress', {
+              id: transferId,
+              transferred,
+              progress: Math.min(100, Math.round((transferred / fileSize) * 100))
+            });
+          }
+        });
+        
+        // 存储传输任务信息
+        activeTransfers.set(transferId, { 
+          readStream, 
+          writeStream, 
+          connectionId 
+        });
+
+        // 返回Promise，在stream结束或出错时解析
+        return new Promise((resolve, reject) => {
+          writeStream.on('finish', () => {
+            // 发送完成事件
+            if (mainWindow) {
+              mainWindow.webContents.send('sftp:transferComplete', {
+                id: transferId,
+                success: true
+              });
+            }
+            
+            // 移除传输任务
+            activeTransfers.delete(transferId);
+            
+            resolve({ success: true, transferId });
+          });
+          
+          writeStream.on('error', (err) => {
+            // 发送错误事件
+            if (mainWindow) {
+              mainWindow.webContents.send('sftp:transferError', {
+                id: transferId,
+                error: err.message
+              });
+            }
+            
+            reject(err);
+          });
+          
+          readStream.pipe(writeStream);
+        });
       } catch (error: any) {
         console.error('下载文件失败:', error)
         return { success: false, error: error.message }
@@ -847,9 +931,83 @@ app.whenReady().then(() => {
 
         const fileName = path.basename(localPath)
         const remoteFilePath = remotePath === '/' ? `/${fileName}` : `${remotePath}/${fileName}`
+        
+        // 创建唯一的传输ID
+        const transferId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        
+        // 获取文件信息以获取大小
+        const stats = fs.statSync(localPath);
+        const fileSize = stats.size;
+        
+        // 发送开始传输事件
+        if (mainWindow) {
+          mainWindow.webContents.send('sftp:transferStart', {
+            id: transferId,
+            type: 'upload',
+            filename: fileName,
+            path: localPath,
+            size: fileSize,
+            connectionId
+          });
+        }
 
-        await sftp.fastPut(localPath, remoteFilePath)
-        return { success: true }
+        // 使用stream进行传输并跟踪进度
+        const readStream = fs.createReadStream(localPath);
+        const writeStream = await sftp.createWriteStream(remoteFilePath);
+        
+        let transferred = 0;
+        
+        readStream.on('data', (chunk) => {
+          transferred += chunk.length;
+          
+          // 发送进度更新
+          if (mainWindow) {
+            mainWindow.webContents.send('sftp:transferProgress', {
+              id: transferId,
+              transferred,
+              progress: Math.min(100, Math.round((transferred / fileSize) * 100))
+            });
+          }
+        });
+        
+        // 存储传输任务信息
+        activeTransfers.set(transferId, { 
+          readStream, 
+          writeStream, 
+          connectionId 
+        });
+
+        // 返回Promise，在stream结束或出错时解析
+        return new Promise((resolve, reject) => {
+          writeStream.on('finish', () => {
+            // 发送完成事件
+            if (mainWindow) {
+              mainWindow.webContents.send('sftp:transferComplete', {
+                id: transferId,
+                success: true
+              });
+            }
+            
+            // 移除传输任务
+            activeTransfers.delete(transferId);
+            
+            resolve({ success: true, transferId });
+          });
+          
+          writeStream.on('error', (err) => {
+            // 发送错误事件
+            if (mainWindow) {
+              mainWindow.webContents.send('sftp:transferError', {
+                id: transferId,
+                error: err.message
+              });
+            }
+            
+            reject(err);
+          });
+          
+          readStream.pipe(writeStream);
+        });
       } catch (error: any) {
         console.error('上传文件失败:', error)
         return { success: false, error: error.message }
@@ -891,6 +1049,39 @@ app.whenReady().then(() => {
         return { success: false, error: error.message }
       }
     })
+
+    // 添加取消传输的IPC处理函数
+    ipcMain.handle('sftp:cancelTransfer', async (_, { transferId }) => {
+      try {
+        const transfer = activeTransfers.get(transferId);
+        if (!transfer) {
+          return { success: false, error: '传输任务不存在或已完成' };
+        }
+
+        // 关闭流
+        if (transfer.readStream) {
+          transfer.readStream.destroy();
+        }
+        if (transfer.writeStream) {
+          transfer.writeStream.destroy();
+        }
+
+        // 从活跃传输列表中移除
+        activeTransfers.delete(transferId);
+
+        // 发送取消事件
+        if (mainWindow) {
+          mainWindow.webContents.send('sftp:transferCancelled', {
+            id: transferId
+          });
+        }
+
+        return { success: true };
+      } catch (error: any) {
+        console.error('取消传输失败:', error);
+        return { success: false, error: error.message };
+      }
+    });
   }
   
   setupIPCHandlers()

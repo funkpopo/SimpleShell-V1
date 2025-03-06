@@ -154,11 +154,47 @@ const api = {
     return await ipcRenderer.invoke('sftp:delete', params)
   },
   
+  // 取消文件传输
+  cancelTransfer: async (params: { transferId: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:cancelTransfer', params)
+  },
+  
   // 加载设置
   loadSettings: () => ipcRenderer.invoke('load-settings'),
   
   // 保存设置
-  saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings)
+  saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings),
+  
+  // 文件传输事件监听
+  onTransferStart: (callback: (data: any) => void) => {
+    const handler = (_: any, data: any) => callback(data)
+    ipcRenderer.on('sftp:transferStart', handler)
+    return () => ipcRenderer.removeListener('sftp:transferStart', handler)
+  },
+  
+  onTransferProgress: (callback: (data: any) => void) => {
+    const handler = (_: any, data: any) => callback(data)
+    ipcRenderer.on('sftp:transferProgress', handler)
+    return () => ipcRenderer.removeListener('sftp:transferProgress', handler)
+  },
+  
+  onTransferComplete: (callback: (data: any) => void) => {
+    const handler = (_: any, data: any) => callback(data)
+    ipcRenderer.on('sftp:transferComplete', handler)
+    return () => ipcRenderer.removeListener('sftp:transferComplete', handler)
+  },
+  
+  onTransferError: (callback: (data: any) => void) => {
+    const handler = (_: any, data: any) => callback(data)
+    ipcRenderer.on('sftp:transferError', handler)
+    return () => ipcRenderer.removeListener('sftp:transferError', handler)
+  },
+  
+  onTransferCancelled: (callback: (data: any) => void) => {
+    const handler = (_: any, data: any) => callback(data)
+    ipcRenderer.on('sftp:transferCancelled', handler)
+    return () => ipcRenderer.removeListener('sftp:transferCancelled', handler)
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to
