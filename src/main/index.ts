@@ -1074,6 +1074,60 @@ app.whenReady().then(() => {
       }
     })
 
+    // 获取文件或文件夹的详细信息
+    ipcMain.handle('sftp:getFileInfo', async (_, { connectionId, path }) => {
+      try {
+        const sftp = activeSftpConnections.get(connectionId)
+        if (!sftp) {
+          return { success: false, error: 'SFTP连接不存在' }
+        }
+
+        // 获取文件/文件夹的基本信息
+        const stat = await sftp.stat(path)
+        
+        // 构建详细信息对象
+        const fileInfo: {
+          name: string;
+          path: string;
+          type: string;
+          size: number;
+          modifyTime: Date;
+          accessTime: Date;
+          rights: any;
+          owner: string | number;
+          group: string | number;
+          isSymbolicLink: boolean;
+          items?: number;
+        } = {
+          name: path.split('/').pop() || path,
+          path: path,
+          type: stat.isDirectory ? 'directory' : 'file',
+          size: stat.size,
+          modifyTime: stat.modifyTime,
+          accessTime: stat.accessTime,
+          rights: stat.rights,
+          owner: stat.uid,
+          group: stat.gid,
+          isSymbolicLink: stat.isSymbolicLink
+        }
+        
+        // 如果是文件夹，尝试获取子项数量
+        if (stat.isDirectory) {
+          try {
+            const list = await sftp.list(path)
+            fileInfo.items = list.length
+          } catch (err) {
+            fileInfo.items = 0
+          }
+        }
+        
+        return { success: true, fileInfo }
+      } catch (error: any) {
+        console.error('获取文件信息失败:', error)
+        return { success: false, error: error.message }
+      }
+    })
+
     // 添加取消传输的IPC处理函数
     ipcMain.handle('sftp:cancelTransfer', async (_, { transferId }) => {
       try {

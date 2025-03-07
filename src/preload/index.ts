@@ -154,6 +154,11 @@ const api = {
     return await ipcRenderer.invoke('sftp:delete', params)
   },
   
+  // 获取文件或文件夹的详细信息
+  sftpGetFileInfo: async (params: { connectionId: string; path: string }): Promise<any> => {
+    return await ipcRenderer.invoke('sftp:getFileInfo', params)
+  },
+  
   // 取消文件传输
   cancelTransfer: async (params: { transferId: string }): Promise<any> => {
     return await ipcRenderer.invoke('sftp:cancelTransfer', params)

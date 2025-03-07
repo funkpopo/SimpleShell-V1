@@ -15,6 +15,8 @@ import RefreshDayIcon from '../assets/refresh-day.svg'
 import RefreshNightIcon from '../assets/refresh-night.svg'
 import OpenFolderDayIcon from '../assets/openfolder-day.svg'
 import OpenFolderNightIcon from '../assets/openfolder-night.svg'
+import InfoDayIcon from '../assets/info-day.svg'
+import InfoNightIcon from '../assets/info-night.svg'
 
 // 定义文件/文件夹项的接口
 interface FileItem {
@@ -79,6 +81,10 @@ const deleteProgress = ref({
   completed: 0,
   currentItem: ''
 })
+
+// 文件信息对话框
+const showFileInfoDialog = ref(false)
+const fileInfo = ref<any>(null)
 
 // 文件传输进度状态
 const transferProgress = ref<TransferItem[]>([])
@@ -1260,6 +1266,7 @@ const closeTransferProgress = () => {
 const handleBackgroundUpload = async (e: MouseEvent) => {
   e.preventDefault()
   await uploadFiles()
+  closeMenu()
 }
 
 // 取消文件传输
@@ -1546,6 +1553,69 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
   // 刷新当前目录
   loadCurrentDirectory()
 }
+
+// 查看文件/文件夹信息
+const viewFileInfo = async () => {
+  if (!clickedItem.value) return
+  
+  try {
+    const path = `${currentPath.value}/${clickedItem.value}`
+    const result = await window.api.sftpGetFileInfo({
+      connectionId: props.connectionId,
+      path: path
+    })
+    
+    if (result.success && result.fileInfo) {
+      fileInfo.value = result.fileInfo
+      showFileInfoDialog.value = true
+    } else {
+      error.value = result.error || '获取文件信息失败'
+    }
+  } catch (err: any) {
+    error.value = err.message || '获取文件信息时发生错误'
+  } finally {
+    closeMenu()
+  }
+}
+
+// 格式化文件权限信息
+const formatPermissions = (rights: any) => {
+  if (!rights) return '未知'
+  return `${rights.user}${rights.group}${rights.other}`
+}
+
+// 格式化日期时间
+const formatDateTime = (date: Date) => {
+  if (!date) return '未知'
+  return new Date(date).toLocaleString()
+}
+
+// 获取权限的可读性描述
+const getReadablePermissions = (permStr: string) => {
+  if (!permStr || permStr.length !== 3) return '未知'
+  
+  const types = ['所有者', '用户组', '其他用户']
+  const result: string[] = []
+  
+  for (let i = 0; i < 3; i++) {
+    const perm = parseInt(permStr[i])
+    const readable: string[] = []
+    
+    if (perm & 4) readable.push('读')
+    if (perm & 2) readable.push('写')
+    if (perm & 1) readable.push('执行')
+    
+    result.push(`${types[i]}: ${readable.join('、') || '无权限'}`)
+  }
+  
+  return result.join('；')
+}
+
+// 关闭文件信息对话框
+const closeInfoDialog = () => {
+  showFileInfoDialog.value = false
+  fileInfo.value = null
+}
 </script>
 
 <template>
@@ -1720,6 +1790,13 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
       >
         <!-- 文件右键菜单 -->
         <template v-if="contextMenuTarget === 'file'">
+          <div class="menu-item" @click="viewFileInfo">
+            <img
+              :src="props.isDarkTheme ? InfoNightIcon : InfoDayIcon"
+              class="info-icon"
+            />
+            查看文件信息
+          </div>
           <div class="menu-item" @click="downloadSelectedFiles">
             <img
               :src="props.isDarkTheme ? DownloadNightIcon : DownloadDayIcon"
@@ -1754,6 +1831,13 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
               class="upload-icon"
             />
             上传到该文件夹
+          </div>
+          <div class="menu-item" @click="viewFileInfo">
+            <img
+              :src="props.isDarkTheme ? InfoNightIcon : InfoDayIcon"
+              class="info-icon"
+            />
+            查看文件夹信息
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
             <img
@@ -1807,7 +1891,7 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
       </div>
     </div>
     
-    <!-- 文件传输进度浮窗 -->
+    <!-- 传输进度窗口 -->
     <div 
       v-if="showTransferProgress && transferProgress.length > 0" 
       class="transfer-progress-modal"
@@ -1941,6 +2025,72 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
         </div>
       </div>
     </div>
+    
+    <!-- 使用teleport将文件信息对话框移动到body -->
+    <teleport to="body">
+      <!-- 文件信息对话框 -->
+      <div v-if="showFileInfoDialog" class="file-info-dialog-overlay" @click="closeInfoDialog">
+        <div class="file-info-dialog" :class="{ 'dark-dialog': props.isDarkTheme }" @click.stop>
+          <div class="dialog-header">
+            <h3>{{ fileInfo?.type === 'directory' ? '文件夹信息' : '文件信息' }}</h3>
+            <button class="close-button" @click="closeInfoDialog">×</button>
+          </div>
+          <div v-if="fileInfo" class="dialog-content">
+            <div class="info-row">
+              <span class="info-label">名称:</span>
+              <span class="info-value">{{ fileInfo.name }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">路径:</span>
+              <span class="info-value">{{ fileInfo.path }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">类型:</span>
+              <span class="info-value">{{ fileInfo.type === 'directory' ? '文件夹' : '文件' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">大小:</span>
+              <span class="info-value">{{ formatFileSize(fileInfo.size) }}</span>
+            </div>
+            <div v-if="fileInfo.type === 'directory'" class="info-row">
+              <span class="info-label">包含项目:</span>
+              <span class="info-value">{{ fileInfo.items || 0 }} 个</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">修改时间:</span>
+              <span class="info-value">{{ formatDateTime(fileInfo.modifyTime) }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">访问时间:</span>
+              <span class="info-value">{{ formatDateTime(fileInfo.accessTime) }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">权限:</span>
+              <span class="info-value">{{ formatPermissions(fileInfo.rights) }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">权限详情:</span>
+              <span class="info-value">{{ getReadablePermissions(formatPermissions(fileInfo.rights)) }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">所有者:</span>
+              <span class="info-value">{{ fileInfo.owner }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">用户组:</span>
+              <span class="info-value">{{ fileInfo.group }}</span>
+            </div>
+            <div v-if="fileInfo.isSymbolicLink" class="info-row">
+              <span class="info-label">符号链接:</span>
+              <span class="info-value">是</span>
+            </div>
+          </div>
+          <div class="dialog-footer">
+            <button class="close-button-text" @click="closeInfoDialog">关闭</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -2016,7 +2166,8 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
 .dark-menu .plus-icon,
 .dark-menu .back-icon,
 .dark-menu .edit-icon,
-.dark-menu .openfolder-icon {
+.dark-menu .openfolder-icon,
+.dark-menu .info-icon {
   opacity: 1;
 }
 
@@ -2029,7 +2180,8 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
 .plus-icon,
 .back-icon,
 .edit-icon,
-.openfolder-icon {
+.openfolder-icon,
+.info-icon {
   width: 20px;
   height: 20px;
   margin-right: 8px;
@@ -2911,5 +3063,141 @@ const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
 
 .dark-theme .progress-bar.verifying {
   background-color: #1976d2;
+}
+
+.transfer-progress-window .cancel-all-button {
+  margin-top: 10px;
+  color: var(--text-color);
+  background-color: var(--background-color);
+  border: 1px solid var(--border-color);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* 文件信息对话框样式 */
+.file-info-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 99999;
+  backdrop-filter: blur(3px);
+}
+
+.dark-theme .file-info-dialog-overlay {
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+}
+
+.file-info-dialog {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  width: 500px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  color: #333; /* 日间主题文字颜色 */
+}
+
+.dark-dialog {
+  background-color: #222;
+  color: #eee; /* 夜间主题文字颜色 */
+  border: 1px solid #444;
+}
+
+.dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.dark-dialog .dialog-header {
+  border-bottom: 1px solid #444;
+}
+
+.dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: inherit; /* 继承父元素的文字颜色 */
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+}
+
+.dark-dialog .close-button {
+  color: #ccc;
+}
+
+.dialog-content {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.info-label {
+  font-weight: bold;
+  min-width: 100px;
+  flex-shrink: 0;
+  color: #555; /* 日间主题标签颜色 */
+}
+
+.dark-dialog .info-label {
+  color: #bbb; /* 夜间主题标签颜色 */
+}
+
+.info-value {
+  word-break: break-all;
+  color: #333; /* 日间主题值文字颜色 */
+}
+
+.dark-dialog .info-value {
+  color: #eee; /* 夜间主题值文字颜色 */
+}
+
+.dialog-footer {
+  padding: 12px 16px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #eee;
+}
+
+.dark-dialog .dialog-footer {
+  border-top: 1px solid #444;
+}
+
+.close-button-text {
+  background-color: #f3f3f3;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: #333;
+}
+
+.dark-dialog .close-button-text {
+  background-color: #444;
+  border-color: #555;
+  color: #eee;
 }
 </style> 

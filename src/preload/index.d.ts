@@ -140,6 +140,24 @@ interface API {
     error?: string;
   }>;
   
+  sftpGetFileInfo(params: { connectionId: string; path: string }): Promise<{
+    success: boolean;
+    fileInfo?: {
+      name: string;
+      path: string;
+      type: string;
+      size: number;
+      modifyTime: Date;
+      accessTime: Date;
+      rights: any;
+      owner: string | number;
+      group: string | number;
+      isSymbolicLink: boolean;
+      items?: number;
+    };
+    error?: string;
+  }>;
+  
   cancelTransfer(params: { transferId: string }): Promise<{
     success: boolean;
     error?: string;
