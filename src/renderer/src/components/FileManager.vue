@@ -42,6 +42,10 @@ interface TransferItem {
   status: 'pending' | 'transferring' | 'verifying' | 'completed' | 'error' | 'cancelled'
   error?: string
   removeTimer?: number // 添加移除计时器ID
+  pendingRemoval?: boolean // 添加准备删除标志
+  completedAt?: number // 添加完成时间戳
+  _lastUpdateTime?: number // 添加上次更新时间戳
+  _lastVerifyTime?: number // 添加上次验证时间戳
 }
 
 // 定义props
@@ -124,6 +128,9 @@ const formatFileSize = (size: number): string => {
 const formatModifyTime = (time: string): string => {
   return new Date(time).toLocaleString()
 }
+
+// 定期检查传输状态的定时器
+let transferStatusCheckTimer: number | null = null
 
 // 加载当前目录内容
 const loadCurrentDirectory = async () => {
@@ -911,6 +918,19 @@ const initFileTransferHandlers = () => {
       if (transferItem.type === 'upload' && data.progress === 100 && transferItem.status === 'transferring') {
         console.log('上传进度达到100%，立即刷新文件列表')
         loadCurrentDirectory()
+        
+        // 添加：如果进度达到100%但状态仍为transferring，设置为verifying并准备验证
+        // 这是为了解决某些情况下状态没有正确更新的问题
+        if (transferItem.status === 'transferring') {
+          console.log(`上传进度达到100%，但状态仍为transferring，手动设置为verifying: ${transferItem.filename}`)
+          transferItem.status = 'verifying'
+          
+          // 延迟一段时间后进行验证，确保文件系统已更新
+          setTimeout(async () => {
+            const success = await verifyTransferSuccess(transferItem)
+            handleTransferVerificationResult(transferItem, success)
+          }, 1500) // 增加延迟时间以确保文件系统更新
+        }
       }
     }
   })
@@ -920,77 +940,36 @@ const initFileTransferHandlers = () => {
     // 查找对应的传输项
     const transferItem = transferProgress.value.find(item => item.id === data.id)
     if (transferItem) {
-      // 设置为验证中状态
-      transferItem.status = 'verifying'
-      transferItem.progress = 100
-      transferItem.transferred = transferItem.size // 确保进度显示为100%
+      console.log(`收到传输完成事件: ${transferItem.filename}, ID: ${data.id}, 成功: ${data.success}`)
       
-      // 对于上传操作，立即刷新文件列表，不等待验证完成
-      if (transferItem.type === 'upload') {
-        console.log('上传完成，立即刷新文件列表')
-        loadCurrentDirectory()
-      }
-      
-      // 验证文件是否成功上传/下载
-      verifyTransferSuccess(transferItem).then(success => {
-        if (success) {
-          // 更新为完成状态
-          transferItem.status = 'completed'
+      if (data.success) {
+        // 设置为验证中状态
+        transferItem.status = 'verifying'
+        transferItem.progress = 100
+        transferItem.transferred = transferItem.size // 确保进度显示为100%
+        
+        // 对于上传操作，立即刷新文件列表，不等待验证完成
+        if (transferItem.type === 'upload') {
+          console.log('上传完成，立即刷新文件列表')
+          loadCurrentDirectory()
           
-          // 显示成功消息
-          showSuccessMessage(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 成功`)
-          
-          // 添加到最近传输历史
-          addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'completed')
-          
-          // 如果传输窗口没有显示，则显示通知
-          if (!showTransferProgress.value) {
-            showTransferNotification(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 成功`, 'success')
-          }
-          
-          // 设置自动移除计时器，完成后3秒移除（比原来快一些）
-          scheduleItemRemoval(transferItem, 3000)
+          // 延迟一段时间后进行验证，确保文件系统已更新
+          setTimeout(async () => {
+            const success = await verifyTransferSuccess(transferItem)
+            handleTransferVerificationResult(transferItem, success)
+          }, 1000)
         } else {
-          // 验证失败，标记为错误
-          transferItem.status = 'error'
-          transferItem.error = '文件传输验证失败'
-          
-          // 显示错误消息
-          error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 验证失败`
-          
-          // 添加到最近传输历史
-          addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'error')
-          
-          // 如果传输窗口没有显示，则显示通知
-          if (!showTransferProgress.value) {
-            showTransferNotification(`${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 验证失败`, 'error')
-          }
-          
-          // 设置自动移除计时器
-          scheduleItemRemoval(transferItem, 8000)
+          // 下载操作立即验证
+          verifyTransferSuccess(transferItem).then(success => {
+            handleTransferVerificationResult(transferItem, success)
+          })
         }
-        
-        // 无论是上传还是下载都刷新当前目录
-        loadCurrentDirectory()
-      }).catch(err => {
-        console.error(`验证传输 ${transferItem.filename} 失败:`, err)
-        
-        // 更新为错误状态
-        transferItem.status = 'error'
-        transferItem.error = `验证失败: ${err.message || '未知错误'}`
-        
-        // 显示错误消息
-        error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 验证失败: ${err.message || '未知错误'}`
-        
-        // 添加到最近传输历史
-        addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'error')
-        
-        // 刷新当前目录
-        loadCurrentDirectory()
-        
-        // 设置自动移除计时器
-        scheduleItemRemoval(transferItem, 8000)
-      })
+      } else {
+        // 传输完成但服务端标记为失败
+        handleTransferFailure(transferItem, '服务器返回传输失败')
+      }
+    } else {
+      console.error(`收到未知传输项 ID: ${data.id} 的完成事件`)
     }
     
     // 检查是否所有传输都已完成
@@ -1004,6 +983,7 @@ const initFileTransferHandlers = () => {
     if (transferItem) {
       transferItem.status = 'error'
       transferItem.error = data.error
+      transferItem.completedAt = Date.now() // 设置完成时间戳
       
       // 显示错误消息
       error.value = `${transferItem.type === 'upload' ? '上传' : '下载'}文件 ${transferItem.filename} 失败: ${data.error}`
@@ -1034,6 +1014,7 @@ const initFileTransferHandlers = () => {
     if (transferItem) {
       transferItem.status = 'cancelled'
       transferItem.error = '用户取消传输'
+      transferItem.completedAt = Date.now() // 设置完成时间戳
       
       // 添加到最近传输历史
       addToRecentTransfers(transferItem.id, transferItem.filename, transferItem.type, 'cancelled')
@@ -1080,29 +1061,70 @@ const scheduleItemRemoval = (item: TransferItem, delay = 5000) => {
   // 清除之前可能存在的计时器
   if (item.removeTimer) {
     clearTimeout(item.removeTimer)
+    item.removeTimer = undefined
   }
   
   console.log(`安排移除传输项：${item.filename}，状态：${item.status}，延迟：${delay}ms`)
   
-  // 设置新的计时器，默认5秒后自动移除（可自定义）
-  item.removeTimer = window.setTimeout(() => {
+  // 使用window.setTimeout而不是setTimeout，确保在所有环境中正常工作
+  const timerId = window.setTimeout(() => {
     console.log(`执行移除传输项：${item.filename}，状态：${item.status}`)
-    // 移除该项
-    transferProgress.value = transferProgress.value.filter(i => i.id !== item.id)
     
-    // 如果没有正在进行的传输，隐藏浮窗
-    const hasActiveTransfers = transferProgress.value.some(
-      i => i.status === 'pending' || i.status === 'transferring'
-    )
+    // 先将计时器ID置空，防止重复清除
+    item.removeTimer = undefined
     
-    // 如果无正在传输的项，且所有项目都已移除，隐藏传输窗口
-    if (!hasActiveTransfers && transferProgress.value.length === 0) {
-      console.log('所有传输项已完成，隐藏传输窗口')
-      setTimeout(() => {
-        showTransferProgress.value = false
-      }, 500) // 进一步减少等待时间，提升体验
-    }
+    // 更新项目状态，标记为准备删除
+    item.pendingRemoval = true
+    
+    // 使用Vue的nextTick确保DOM更新完成后再执行移除
+    nextTick(() => {
+      // 移除该项（使用函数式更新以确保基于最新状态）
+      transferProgress.value = transferProgress.value.filter(i => i.id !== item.id || (i.id === item.id && !i.pendingRemoval))
+      console.log(`移除后剩余传输项数量: ${transferProgress.value.length}`)
+      
+      // 如果没有正在进行的传输，隐藏浮窗
+      const hasActiveTransfers = transferProgress.value.some(
+        i => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
+      )
+      
+      console.log(`还有活跃传输: ${hasActiveTransfers}, 总数: ${transferProgress.value.length}`)
+      
+      // 如果无正在传输的项，且所有项目都已移除，隐藏传输窗口
+      if (!hasActiveTransfers && transferProgress.value.length === 0) {
+        console.log('所有传输项已完成，隐藏传输窗口')
+        
+        // 使用nextTick确保Vue状态更新完成后再隐藏窗口
+        nextTick(() => {
+          window.setTimeout(() => {
+            showTransferProgress.value = false
+          }, 300)
+        })
+      }
+    })
   }, delay)
+  
+  // 确保保存计时器ID
+  item.removeTimer = timerId
+  console.log(`为传输项 ${item.id} 设置了移除计时器 ID: ${timerId}`)
+  
+  // 设置备用计时器，防止主计时器失效（多一层保障）
+  window.setTimeout(() => {
+    // 检查项目是否仍然存在
+    const stillExists = transferProgress.value.some(i => i.id === item.id)
+    if (stillExists) {
+      console.log(`备用计时器检测到传输项 ${item.id} 仍未被移除，强制移除`)
+      transferProgress.value = transferProgress.value.filter(i => i.id !== item.id)
+      
+      // 如果没有活跃传输且列表为空，隐藏窗口
+      const hasActiveTransfers = transferProgress.value.some(
+        i => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
+      )
+      if (!hasActiveTransfers && transferProgress.value.length === 0) {
+        console.log('备用计时器: 所有传输项已完成，隐藏传输窗口')
+        showTransferProgress.value = false
+      }
+    }
+  }, delay + 2000) // 比主计时器多2秒
 }
 
 // 清除所有传输项的计时器
@@ -1119,7 +1141,7 @@ const clearAllRemovalTimers = () => {
 const checkTransferComplete = () => {
   // 检查是否所有传输都已完成（没有处于进行中状态的传输）
   const allCompleted = !transferProgress.value.some(
-    item => item.status === 'pending' || item.status === 'transferring'
+    item => item.status === 'pending' || item.status === 'transferring' || item.status === 'verifying'
   )
   
   // 如果全部完成，显示总结性消息
@@ -1129,18 +1151,99 @@ const checkTransferComplete = () => {
     const errorCount = transferProgress.value.filter(item => item.status === 'error').length
     const cancelledCount = transferProgress.value.filter(item => item.status === 'cancelled').length
     
-    // 显示总结性消息
+    // 清理所有已完成但未删除的传输项（停留过久的项）
+    const now = Date.now()
+    const completedItems = transferProgress.value.filter(item => 
+      item.status === 'completed' || item.status === 'error' || item.status === 'cancelled'
+    )
+    
+    // 对于已完成状态超过10秒的项目，强制移除
+    const forceCleanupDelay = 10000 // 10秒
+    completedItems.forEach(item => {
+      // 如果项目没有完成时间戳，设置一个
+      if (!item.completedAt) {
+        item.completedAt = now
+      }
+      
+      // 如果已经完成了超过指定时间，且没有正在进行的删除，强制删除
+      if (now - item.completedAt > forceCleanupDelay && !item.pendingRemoval) {
+        console.log(`强制清理长时间停留的已完成传输项: ${item.filename}`)
+        item.pendingRemoval = true
+        
+        // 使用nextTick确保DOM更新
+        nextTick(() => {
+          transferProgress.value = transferProgress.value.filter(i => 
+            i.id !== item.id || (i.id === item.id && !i.pendingRemoval)
+          )
+        })
+      }
+    })
+    
+    // 添加：检查是否有传输中状态停留时间过长的项目（可能卡住）
+    const stuckTransfers = transferProgress.value.filter(item => 
+      (item.status === 'transferring' || item.status === 'verifying') && 
+      item.progress === 100 && // 进度100%但状态未更新
+      item.completedAt === undefined // 未设置完成时间戳
+    )
+    
+    // 处理可能卡住的传输项
+    const stuckTransferTimeout = 20000 // 20秒无状态更新视为卡住
+    stuckTransfers.forEach(item => {
+      // 如果没有上次更新时间，设置当前时间作为参考
+      if (!item._lastUpdateTime) {
+        item._lastUpdateTime = now
+        return
+      }
+      
+      // 如果已经卡住超过指定时间，尝试恢复
+      if (now - item._lastUpdateTime > stuckTransferTimeout) {
+        console.log(`检测到可能卡住的传输项: ${item.filename}, 状态: ${item.status}, 进度: ${item.progress}%`)
+        
+        // 对于上传项目，尝试验证并更新状态
+        if (item.type === 'upload' && item.status === 'transferring' && item.progress === 100) {
+          console.log(`尝试恢复卡住的上传项: ${item.filename}`)
+          item.status = 'verifying'
+          
+          // 延迟验证
+          setTimeout(async () => {
+            const success = await verifyTransferSuccess(item)
+            handleTransferVerificationResult(item, success)
+          }, 1000)
+        } 
+        // 对于验证中状态卡住的项目，强制设置为完成
+        else if (item.status === 'verifying') {
+          console.log(`验证状态卡住，强制设置为完成: ${item.filename}`)
+          item.status = 'completed'
+          item.completedAt = now
+          scheduleItemRemoval(item, 2000)
+        }
+        
+        // 更新上次处理时间，避免重复处理
+        item._lastUpdateTime = now
+      }
+    })
+    
+    // 如果所有项目都已经完成并且没有剩余项目，隐藏传输窗口
+    if (transferProgress.value.length === 0 || 
+        (completedItems.length === transferProgress.value.length && 
+         completedItems.every(item => item.pendingRemoval))) {
+      console.log('所有传输已完成并准备删除，隐藏传输窗口')
+      setTimeout(() => {
+        showTransferProgress.value = false
+      }, 300)
+    }
+    
+    // 如果有完成的项目，显示提示消息
     if (completedCount > 0 || errorCount > 0 || cancelledCount > 0) {
-      let message = '传输完成：'
-      if (completedCount > 0) message += `${completedCount}个成功`
-      if (errorCount > 0) message += `${completedCount > 0 ? '，' : ''}${errorCount}个失败`
-      if (cancelledCount > 0) message += `${completedCount > 0 || errorCount > 0 ? '，' : ''}${cancelledCount}个已取消`
+      const message = `文件传输结果: ${completedCount}个成功, ${errorCount}个失败, ${cancelledCount}个取消`
+      console.log(message)
       
-      showSuccessMessage(message)
-      
-      // 如果传输窗口没有显示，也显示通知
-      if (!showTransferProgress.value) {
-        showTransferNotification(message, completedCount > 0 ? 'success' : 'error')
+      // 只有有成功项时才显示成功提示
+      if (completedCount > 0) {
+        showSuccessMessage(message)
+      } else if (errorCount > 0) {
+        // 否则如果有错误项，显示错误提示
+        error.value = message
       }
     }
   }
@@ -1177,6 +1280,7 @@ const cancelTransfer = async (transferId: string) => {
       // 更新状态为已取消
       transferItem.status = 'cancelled'
       transferItem.error = '用户取消传输'
+      transferItem.completedAt = Date.now() // 设置完成时间戳
       
       // 显示提示
       showSuccessMessage(`已取消${transferItem.type === 'upload' ? '上传' : '下载'}文件: ${transferItem.filename}`)
@@ -1200,29 +1304,48 @@ const cancelTransfer = async (transferId: string) => {
 const clearTransferItem = (transferId: string) => {
   const transferItem = transferProgress.value.find(item => item.id === transferId)
   if (transferItem) {
-    // 立即从列表中移除
-    transferProgress.value = transferProgress.value.filter(item => item.id !== transferId)
+    console.log(`手动清除传输项: ${transferItem.filename}, ID: ${transferId}`)
     
-    // 如果没有正在进行的传输和剩余项，隐藏传输窗口
-    const hasActiveTransfers = transferProgress.value.some(
-      i => i.status === 'pending' || i.status === 'transferring'
-    )
-    
-    if (!hasActiveTransfers && transferProgress.value.length === 0) {
-      showTransferProgress.value = false
+    // 清除可能存在的定时器
+    if (transferItem.removeTimer) {
+      clearTimeout(transferItem.removeTimer)
+      transferItem.removeTimer = undefined
+      console.log(`清除了传输项 ${transferId} 的自动移除计时器`)
     }
+    
+    // 标记为准备删除
+    transferItem.pendingRemoval = true
+    
+    // 使用nextTick确保DOM更新后再移除
+    nextTick(() => {
+      // 立即从列表中移除
+      transferProgress.value = transferProgress.value.filter(item => item.id !== transferId || (item.id === transferId && !item.pendingRemoval))
+      console.log(`手动移除后剩余传输项数量: ${transferProgress.value.length}`)
+      
+      // 如果没有正在进行的传输和剩余项，隐藏传输窗口
+      const hasActiveTransfers = transferProgress.value.some(
+        i => i.status === 'pending' || i.status === 'transferring' || i.status === 'verifying'
+      )
+      
+      console.log(`手动清除后，还有活跃传输: ${hasActiveTransfers}, 总数: ${transferProgress.value.length}`)
+      
+      if (!hasActiveTransfers && transferProgress.value.length === 0) {
+        console.log('手动清除后，所有传输项已完成，隐藏传输窗口')
+        nextTick(() => {
+          window.setTimeout(() => {
+            showTransferProgress.value = false
+          }, 300)
+        })
+      }
+    })
+  } else {
+    console.warn(`尝试清除不存在的传输项 ID: ${transferId}`)
   }
 }
 
 // 组件挂载时加载目录
-onMounted(() => {
+onMounted(async () => {
   console.log('FileManager组件挂载，当前连接ID:', props.connectionId)
-  if (props.connectionId) {
-    // 延迟加载目录，确保SFTP连接已经完全建立
-    setTimeout(() => {
-      loadCurrentDirectory()
-    }, 2000)
-  }
   
   // 添加键盘事件监听
   window.addEventListener('keydown', handleKeyDown)
@@ -1230,13 +1353,89 @@ onMounted(() => {
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleWindowResize)
   
-  // 初始化文件传输事件监听
-  const cleanupTransferHandlers = initFileTransferHandlers()
-  
-  // 组件卸载时清理监听器
-  onBeforeUnmount(() => {
-    cleanupTransferHandlers()
-  })
+  if (props.connectionId) {
+    // 显示加载状态
+    isLoading.value = true
+    
+    // 初始化传输事件处理
+    const cleanupTransferHandlers = initFileTransferHandlers()
+    
+    // 获取目录内容
+    if (currentPath.value) {
+      loadCurrentDirectory()
+        .catch(err => {
+          console.error('初始加载目录失败:', err)
+          error.value = `加载目录失败: ${err.message || '未知错误'}`
+        })
+        .finally(() => {
+          isLoading.value = false
+        })
+    }
+    
+    // 设置定期检查传输状态的定时器
+    transferStatusCheckTimer = window.setInterval(() => {
+      // 调用检查函数
+      checkTransferComplete()
+      
+      // 检查是否有进度为100%但状态未更新为completed的项目
+      const now = Date.now()
+      const stuckItems = transferProgress.value.filter(item => 
+        (item.status === 'transferring' && item.progress === 100) || 
+        (item.status === 'verifying' && (!item._lastVerifyTime || now - item._lastVerifyTime > 10000))
+      )
+      
+      if (stuckItems.length > 0) {
+        console.log(`定期检查：发现 ${stuckItems.length} 个可能卡住的传输项`)
+        stuckItems.forEach(item => {
+          // 为卡在transferring状态的项目触发状态更新
+          if (item.status === 'transferring' && item.progress === 100) {
+            console.log(`定期检查：修复卡在transferring的项目: ${item.filename}`)
+            item.status = 'verifying'
+            
+            // 延迟验证
+            setTimeout(async () => {
+              // 记录开始验证的时间
+              item._lastVerifyTime = Date.now()
+              const success = await verifyTransferSuccess(item)
+              handleTransferVerificationResult(item, success)
+            }, 1000)
+          }
+          // 处理验证时间过长的项目
+          else if (item.status === 'verifying' && (!item._lastVerifyTime || now - item._lastVerifyTime > 10000)) {
+            console.log(`定期检查：验证时间过长，手动完成: ${item.filename}`)
+            item.status = 'completed'
+            item.completedAt = now
+            
+            // 添加到最近传输历史
+            addToRecentTransfers(item.id, item.filename, item.type, 'completed')
+            
+            // 设置自动移除计时器
+            scheduleItemRemoval(item, 2000)
+          }
+        })
+      }
+    }, 5000) // 每5秒检查一次
+    
+    // 组件卸载时清理监听器
+    onBeforeUnmount(() => {
+      // 移除键盘事件监听
+      window.removeEventListener('keydown', handleKeyDown)
+      
+      // 移除窗口大小变化监听
+      window.removeEventListener('resize', handleWindowResize)
+      
+      cleanupTransferHandlers()
+      
+      // 清除定期检查定时器
+      if (transferStatusCheckTimer !== null) {
+        clearInterval(transferStatusCheckTimer)
+        transferStatusCheckTimer = null
+      }
+      
+      // 清除所有传输项的自动移除计时器
+      clearAllRemovalTimers()
+    })
+  }
 })
 
 // 组件卸载时移除事件监听
@@ -1260,74 +1459,92 @@ onBeforeUnmount(() => {
 // 验证文件传输是否成功
 const verifyTransferSuccess = async (item: TransferItem): Promise<boolean> => {
   try {
-    console.log(`开始验证传输项: ${item.filename}`)
+    console.log(`验证传输项: ${item.filename}, 类型: ${item.type}`)
     
-    // 根据传输类型确定验证方法
     if (item.type === 'upload') {
-      // 上传验证：检查文件是否存在于远程目录
-      // 构建完整的远程路径
-      const remotePath = item.path.endsWith('/') 
-        ? `${item.path}${item.filename}`
-        : `${item.path}/${item.filename}`
+      // 对于上传，验证文件是否存在于当前目录
+      const result = await window.api.sftpReadDir({
+        connectionId: props.connectionId,
+        path: currentPath.value
+      })
       
-      console.log(`验证上传文件: ${remotePath}`)
-      
-      // 尝试多次验证，有时文件可能需要一点时间才能在服务器上可见
-      let retryCount = 0;
-      const maxRetries = 3;
-      
-      while (retryCount < maxRetries) {
-        // 通过SFTP读取目录来检查文件是否存在
-        const result = await window.api.sftpReadDir({
-          connectionId: props.connectionId,
-          path: item.path
-        })
-        
-        // 检查文件是否存在并获取其大小
-        if (result.success && result.files) {
-          const fileInfo = result.files.find(file => file.name === item.filename)
-          
-          if (fileInfo) {
-            console.log(`验证结果: 文件存在, 大小: ${fileInfo.size}, 期望大小: ${item.size}`)
-            
-            // 验证文件大小是否与上传大小一致(允许5%的误差)
-            const sizeMatch = Math.abs(fileInfo.size - item.size) <= (item.size * 0.05)
-            
-            // 如果验证成功，再次刷新文件列表确保显示
-            if (sizeMatch && item.type === 'upload') {
-              loadCurrentDirectory()
-            }
-            
-            return sizeMatch
-          }
-        }
-        
-        // 如果没有找到文件，等待一段时间后重试
-        retryCount++;
-        if (retryCount < maxRetries) {
-          console.log(`未找到文件，等待后重试 (${retryCount}/${maxRetries})`)
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
-          // 每次重试前都刷新一次目录
-          if (item.type === 'upload') {
-            loadCurrentDirectory()
-          }
+      if (result.success && result.files) {
+        // 检查文件是否存在且大小正确
+        const uploadedFile = result.files.find(f => f.name === item.filename)
+        if (uploadedFile && uploadedFile.size === item.size) {
+          console.log(`上传验证成功: ${item.filename}, 大小匹配: ${uploadedFile.size}`)
+          return true
+        } else {
+          console.error(`上传验证失败: ${item.filename}, 文件不存在或大小不匹配`)
+          return false
         }
       }
-      
-      console.log('验证失败: 文件不存在或无法访问')
-      return false
-    } else if (item.type === 'download') {
-      // 下载验证：这里不需要特别验证，因为文件直接保存到本地文件系统
-      // 本地文件系统的保存通常是由操作系统处理的，如果出错会有异常
-      return true
+    } else {
+      // 对于下载，验证文件大小是否正确
+      if (item.transferred === item.size) {
+        console.log(`下载验证成功: ${item.filename}, 传输大小等于文件大小`)
+        return true
+      } else {
+        console.error(`下载验证失败: ${item.filename}, 传输大小(${item.transferred}) != 文件大小(${item.size})`)
+        return false
+      }
     }
     
     return false
   } catch (err) {
-    console.error(`验证传输失败:`, err)
+    console.error(`验证传输失败: ${err}`)
     return false
   }
+}
+
+// 处理传输验证结果
+const handleTransferVerificationResult = (item: TransferItem, success: boolean) => {
+  if (success) {
+    // 更新为完成状态
+    item.status = 'completed'
+    item.completedAt = Date.now()
+    
+    // 显示成功消息
+    showSuccessMessage(`${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 成功`)
+    
+    // 添加到最近传输历史
+    addToRecentTransfers(item.id, item.filename, item.type, 'completed')
+    
+    // 如果传输窗口没有显示，则显示通知
+    if (!showTransferProgress.value) {
+      showTransferNotification(`${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 成功`, 'success')
+    }
+    
+    // 设置自动移除计时器，完成后2秒移除
+    scheduleItemRemoval(item, 2000)
+  } else {
+    handleTransferFailure(item, '文件传输验证失败')
+  }
+}
+
+// 处理传输失败
+const handleTransferFailure = (item: TransferItem, errorMessage: string) => {
+  // 更新为错误状态
+  item.status = 'error'
+  item.error = errorMessage
+  item.completedAt = Date.now()
+  
+  // 显示错误消息
+  error.value = `${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 失败: ${errorMessage}`
+  
+  // 添加到最近传输历史
+  addToRecentTransfers(item.id, item.filename, item.type, 'error')
+  
+  // 如果传输窗口没有显示，则显示通知
+  if (!showTransferProgress.value) {
+    showTransferNotification(`${item.type === 'upload' ? '上传' : '下载'}文件 ${item.filename} 失败`, 'error')
+  }
+  
+  // 设置自动移除计时器，错误状态保留较长时间供用户查看
+  scheduleItemRemoval(item, 8000)
+  
+  // 刷新当前目录
+  loadCurrentDirectory()
 }
 </script>
 
