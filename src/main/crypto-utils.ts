@@ -5,7 +5,6 @@ import { machineIdSync } from 'node-machine-id'
 // AES 加密配置
 const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 16  // 初始化向量长度
-const AUTH_TAG_LENGTH = 16  // 认证标签长度
 const KEY_LENGTH = 32  // 密钥长度 (256 位)
 const ENCODING = 'utf8'
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import draggable from 'vuedraggable'
 import CollectionNightIcon from '../assets/collection-night.svg'
 import CollectionDayIcon from '../assets/collection-day.svg'
 import AddCollectionNightIcon from '../assets/plus-night.svg'
@@ -55,6 +56,54 @@ const editingConnId = ref<string | null>(null)
 
 // 组织展开/折叠状态
 const expandedOrganizations = ref<Record<string, boolean>>({})
+
+// 拖拽状态
+const isDragging = ref(false)
+const dragSourceOrg = ref<string | null>(null)
+
+// 拖拽相关样式
+const dragOptionsOrg = {
+  animation: 150,
+  group: 'organizations',
+  ghostClass: 'ghost-org',
+  dragClass: 'dragging-org',
+  handle: '.organization-header'
+}
+
+const dragOptionsConn = {
+  animation: 150,
+  group: 'connections',
+  ghostClass: 'ghost-conn',
+  dragClass: 'dragging-conn'
+}
+
+// 处理组织排序变化
+const handleOrgChange = async (evt) => {
+  console.log('组织排序变更:', evt)
+  if (evt.moved) {
+    await saveConnections()
+  }
+}
+
+// 处理连接排序变化
+const handleConnChange = async (evt) => {
+  console.log('连接排序变更:', evt)
+  if (evt.moved || evt.added || evt.removed) {
+    await saveConnections()
+  }
+}
+
+// 拖拽开始
+const onDragStart = (orgId) => {
+  isDragging.value = true
+  dragSourceOrg.value = orgId
+}
+
+// 拖拽结束
+const onDragEnd = () => {
+  isDragging.value = false
+  dragSourceOrg.value = null
+}
 
 // 加载连接配置
 const loadConnections = async () => {
@@ -387,45 +436,63 @@ onUnmounted(() => {
       <h3>连接管理</h3>
       
       <div class="connection-list">
-        <div 
-          v-for="org in organizations" 
-          :key="org.id" 
-          class="organization"
+        <draggable 
+          v-model="organizations" 
+          item-key="id"
+          v-bind="dragOptionsOrg"
+          @start="onDragStart"
+          @end="onDragEnd"
+          @change="handleOrgChange"
+          class="organization-draggable"
         >
-          <!-- 组织名称 -->
-          <div 
-            class="organization-header" 
-            @click="toggleOrganization(org.id)"
-            @contextmenu.stop="showMenu($event, 'organization', org.id)"
-          >
-            <div class="organization-name">
-              <img
-                :src="props.isDarkTheme ? CollectionNightIcon : CollectionDayIcon"
-                class="collection-icon"
-              />
-              {{ org.name }}
-            </div>
-          </div>
-          
-          <!-- 连接列表 -->
-          <div v-show="expandedOrganizations[org.id]" class="connection-items">
-            <div 
-              v-for="conn in org.connections" 
-              :key="conn.id"
-              class="connection-item"
-              @dblclick="connectToServer(org.id, conn.id)"
-              @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
-            >
-              <div class="connection-name">
-                <div 
-                  class="connection-color-block" 
-                  :style="{ backgroundColor: getConnectionColor(conn.id) }"
-                ></div>
-                {{ conn.name }}
+          <template #item="{ element: org }">
+            <div class="organization">
+              <!-- 组织名称 -->
+              <div 
+                class="organization-header" 
+                @click="toggleOrganization(org.id)"
+                @contextmenu.stop="showMenu($event, 'organization', org.id)"
+              >
+                <div class="organization-name">
+                  <span class="drag-handle">⋮⋮</span>
+                  <img
+                    :src="props.isDarkTheme ? CollectionNightIcon : CollectionDayIcon"
+                    class="collection-icon"
+                  />
+                  {{ org.name }}
+                </div>
+              </div>
+              
+              <!-- 连接列表 -->
+              <div v-show="expandedOrganizations[org.id]" class="connection-items">
+                <draggable 
+                  v-model="org.connections" 
+                  item-key="id"
+                  v-bind="dragOptionsConn"
+                  @change="handleConnChange"
+                  class="connection-draggable"
+                >
+                  <template #item="{ element: conn }">
+                    <div 
+                      class="connection-item"
+                      @dblclick="connectToServer(org.id, conn.id)"
+                      @contextmenu.stop="showMenu($event, 'connection', org.id, conn.id)"
+                    >
+                      <div class="connection-name">
+                        <span class="drag-handle-conn">⋮⋮</span>
+                        <div 
+                          class="connection-color-block" 
+                          :style="{ backgroundColor: getConnectionColor(conn.id) }"
+                        ></div>
+                        {{ conn.name }}
+                      </div>
+                    </div>
+                  </template>
+                </draggable>
               </div>
             </div>
-          </div>
-        </div>
+          </template>
+        </draggable>
       </div>
     </div>
     
@@ -885,5 +952,51 @@ h3 {
 
 .dark-theme .connection-vertical-label:hover {
   color: white;
+}
+
+/* 拖拽相关样式 */
+.organization-draggable,
+.connection-draggable {
+  min-height: 5px; /* 确保即使没有项目也有拖拽区域 */
+}
+
+.drag-handle,
+.drag-handle-conn {
+  cursor: move;
+  font-size: 14px;
+  margin-right: 5px;
+  color: var(--text-color-light);
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+  user-select: none;
+}
+
+.drag-handle-conn {
+  font-size: 12px;
+}
+
+.organization-header:hover .drag-handle,
+.connection-item:hover .drag-handle-conn {
+  opacity: 0.8;
+}
+
+.ghost-org {
+  opacity: 0.6;
+  background-color: var(--section-bg-color);
+  border: 1px dashed var(--border-color);
+}
+
+.ghost-conn {
+  opacity: 0.6;
+  background-color: var(--section-bg-color);
+  border: 1px dashed var(--border-color);
+}
+
+.dragging-org,
+.dragging-conn {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  opacity: 0.8;
+  background-color: var(--menu-hover-bg);
+  z-index: 1;
 }
 </style> 
