@@ -8,6 +8,7 @@ import * as path from 'path'
 import { Client } from 'ssh2'
 import * as pty from 'node-pty'
 import SftpClient from 'ssh2-sftp-client'
+import { encryptConnection, decryptConnection, encryptString, decryptString } from './crypto-utils'
 
 // 主窗口实例
 let mainWindow: BrowserWindow | null = null
@@ -60,7 +61,13 @@ function loadConnections(): Organization[] {
         const parsed = JSON.parse(fileContent)
         // 确认解析出的内容是数组
         if (Array.isArray(parsed)) {
-          return parsed
+          // 解密敏感数据
+          return parsed.map(org => ({
+            ...org,
+            connections: Array.isArray(org.connections) 
+              ? org.connections.map(conn => decryptConnection(conn))
+              : []
+          }))
         } else {
           // console.warn('配置文件内容不是有效数组，返回空数组')
           return []
@@ -96,8 +103,16 @@ function saveConnections(organizations: Organization[]): boolean {
       // console.log('保存数据:', Array.isArray(organizations) ? `${organizations.length}个组织` : '非数组')
     }
     
+    // 加密敏感数据
+    const encryptedOrganizations = organizations.map(org => ({
+      ...org,
+      connections: Array.isArray(org.connections) 
+        ? org.connections.map(conn => encryptConnection(conn))
+        : []
+    }))
+    
     // 以同步方式写入文件
-    const jsonContent = JSON.stringify(organizations, null, 2)
+    const jsonContent = JSON.stringify(encryptedOrganizations, null, 2)
     fs.writeFileSync(connectionsFilePath, jsonContent, { encoding: 'utf-8', flag: 'w' })
     // console.log('文件写入完成，内容长度:', jsonContent.length, '字节')
     
@@ -203,6 +218,15 @@ ipcMain.handle('ssh:connect', async (_, connectionInfo: any) => {
     try {
       // 保存原始数据用于调试
       originalInfo = { ...connectionInfo };
+
+      // 解密可能加密过的密码和私钥
+      if (connectionInfo?.password) {
+        connectionInfo.password = decryptString(connectionInfo.password);
+      }
+      
+      if (connectionInfo?.privateKey) {
+        connectionInfo.privateKey = decryptString(connectionInfo.privateKey);
+      }
       
       // 创建只有基本数据类型的安全连接对象
       const connectionStr = JSON.stringify({
