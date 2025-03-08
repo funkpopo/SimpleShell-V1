@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, nextTick } from 'vue'
+import { useI18n } from '../i18n'
+
+// 使用i18n
+const { t } = useI18n()
 
 interface Connection {
   id: string
@@ -142,7 +146,7 @@ const initFormData = () => {
   
   // 根据编辑类型设置对话框标题
   if (props.editType === 'organization') {
-    dialogTitle.value = isCreating.value ? '新建组织' : '编辑组织'
+    dialogTitle.value = isCreating.value ? t('connection.newOrganization') : t('connection.editOrganization')
     
     // 如果是编辑现有组织
     if (!isCreating.value && props.organizationId) {
@@ -152,7 +156,7 @@ const initFormData = () => {
       }
     }
   } else {
-    dialogTitle.value = isCreating.value ? '新建连接' : '编辑连接'
+    dialogTitle.value = isCreating.value ? t('connection.newConnection') : t('connection.editConnection')
     
     // 如果是编辑现有连接
     if (!isCreating.value && props.organizationId && props.connectionId) {
@@ -164,9 +168,9 @@ const initFormData = () => {
           
           // 如果有私钥，设置文件名显示
           if (conn.privateKey && conn.privateKeyPath) {
-            privateKeyFilename.value = conn.privateKeyPath.split(/[/\\]/).pop() || '已保存的私钥'
+            privateKeyFilename.value = conn.privateKeyPath.split(/[/\\]/).pop() || t('connection.savedPrivateKey')
           } else if (conn.privateKey) {
-            privateKeyFilename.value = '已保存的私钥'
+            privateKeyFilename.value = t('connection.savedPrivateKey')
           }
         }
       }
@@ -181,24 +185,24 @@ const validateForm = (): boolean => {
   
   // 名称是必填的
   if (!formData.value.name.trim()) {
-    formErrors.value.name = '名称不能为空'
+    formErrors.value.name = `${t('connection.name')}${t('connection.required')}`
     isValid = false
   }
   
   // 如果是连接表单，还需要验证其他字段
   if (props.editType === 'connection') {
     if (!formData.value.host?.trim()) {
-      formErrors.value.host = '主机地址不能为空'
+      formErrors.value.host = `${t('connection.host')}${t('connection.required')}`
       isValid = false
     }
     
     if (!formData.value.port || formData.value.port <= 0 || formData.value.port > 65535) {
-      formErrors.value.port = '端口号必须在1-65535之间'
+      formErrors.value.port = t('connection.portRange')
       isValid = false
     }
     
     if (!formData.value.username?.trim()) {
-      formErrors.value.username = '用户名不能为空'
+      formErrors.value.username = `${t('connection.username')}${t('connection.required')}`
       isValid = false
     }
   }

@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { useI18n } from '../i18n'
+
+// 使用i18n
+const { t } = useI18n()
 
 interface SystemInfo {
   osInfo: {
@@ -103,7 +107,7 @@ const memoryProgressStyle = computed(() => ({
       <div 
         class="mini-progress cpu" 
         data-type="CPU"
-        :title="`CPU使用率: ${formatPercentage(systemInfo.cpuInfo.usage)}%\n型号: ${systemInfo.cpuInfo.model}\n核心数: ${systemInfo.cpuInfo.cores}`"
+        :title="`${t('system.cpu')}: ${formatPercentage(systemInfo.cpuInfo.usage)}%\n${t('system.model')}: ${systemInfo.cpuInfo.model}\n${t('system.cores')}: ${systemInfo.cpuInfo.cores}`"
       >
         <div 
           class="mini-progress-bar"
@@ -119,7 +123,7 @@ const memoryProgressStyle = computed(() => ({
       <div 
         class="mini-progress memory" 
         data-type="MEM"
-        :title="`内存使用率: ${formatPercentage(systemInfo.memoryInfo.usedPercentage)}%\n已用: ${formatBytes(systemInfo.memoryInfo.used)}\n总计: ${formatBytes(systemInfo.memoryInfo.total)}`"
+        :title="`${t('system.memory')}: ${formatPercentage(systemInfo.memoryInfo.usedPercentage)}%\n${t('system.used')}: ${formatBytes(systemInfo.memoryInfo.used)}\n${t('system.total')}: ${formatBytes(systemInfo.memoryInfo.total)}`"
       >
         <div 
           class="mini-progress-bar"
@@ -135,33 +139,33 @@ const memoryProgressStyle = computed(() => ({
     <!-- 常规监控内容 -->
     <div class="monitor-content">
       <div class="monitor-section">
-        <h3>操作系统信息</h3>
+        <h3>{{ t('system.os') }}</h3>
         <div class="info-item">
-          <span>平台：</span>
+          <span>{{ t('system.platform') }}：</span>
           <span :title="systemInfo.osInfo.platform">{{ systemInfo.osInfo.platform }}</span>
         </div>
         <div class="info-item">
-          <span>版本：</span>
+          <span>{{ t('system.version') }}：</span>
           <span :title="systemInfo.osInfo.release">{{ systemInfo.osInfo.release }}</span>
         </div>
         <div class="info-item">
-          <span>架构：</span>
+          <span>{{ t('system.arch') }}：</span>
           <span :title="systemInfo.osInfo.arch">{{ systemInfo.osInfo.arch }}</span>
         </div>
       </div>
 
       <div class="monitor-section">
-        <h3>CPU信息</h3>
+        <h3>{{ t('system.cpu') }}</h3>
         <div class="info-item">
-          <span>型号：</span>
+          <span>{{ t('system.model') }}：</span>
           <span :title="systemInfo.cpuInfo.model">{{ systemInfo.cpuInfo.model }}</span>
         </div>
         <div class="info-item">
-          <span>核心数：</span>
+          <span>{{ t('system.cores') }}：</span>
           <span>{{ systemInfo.cpuInfo.cores }}</span>
         </div>
         <div class="info-item">
-          <span>使用率：</span>
+          <span>{{ t('system.usage') }}：</span>
           <div class="progress-bar">
             <div
               class="progress"
@@ -173,17 +177,17 @@ const memoryProgressStyle = computed(() => ({
       </div>
 
       <div class="monitor-section">
-        <h3>内存信息</h3>
+        <h3>{{ t('system.memory') }}</h3>
         <div class="info-item">
-          <span>总内存：</span>
+          <span>{{ t('system.total') }}：</span>
           <span>{{ formatBytes(systemInfo.memoryInfo.total) }}</span>
         </div>
         <div class="info-item">
-          <span>已用内存：</span>
+          <span>{{ t('system.used') }}：</span>
           <span>{{ formatBytes(systemInfo.memoryInfo.used) }}</span>
         </div>
         <div class="info-item">
-          <span>使用率：</span>
+          <span>{{ t('system.usage') }}：</span>
           <div class="progress-bar">
             <div
               class="progress"

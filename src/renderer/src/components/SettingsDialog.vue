@@ -1,6 +1,10 @@
 <!-- 全局设置对话框 -->
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { useI18n } from '../i18n'
+
+// 使用i18n
+const { t, language, setLanguage } = useI18n()
 
 // 定义props
 const props = defineProps<{
@@ -43,10 +47,10 @@ const formData = ref<GlobalSettings>({
 
 // 字体大小选项
 const fontSizeOptions = [
-  { label: '小', value: 12 },
-  { label: '中', value: 14 },
-  { label: '大', value: 16 },
-  { label: '特大', value: 18 }
+  { label: t('settings.fontSizes.small'), value: 12 },
+  { label: t('settings.fontSizes.medium'), value: 14 },
+  { label: t('settings.fontSizes.large'), value: 16 },
+  { label: t('settings.fontSizes.extraLarge'), value: 18 }
 ]
 
 // 语言选项
@@ -57,11 +61,11 @@ const languageOptions = [
 
 // 常用字体选项
 const fontFamilyOptions = [
-  { label: '系统默认', value: 'system-ui' },
-  { label: 'Arial', value: 'Arial' },
-  { label: '微软雅黑', value: 'Microsoft YaHei' },
-  { label: '思源黑体', value: 'Noto Sans SC' },
-  { label: 'Roboto', value: 'Roboto' }
+  { label: t('settings.fontFamilies.system'), value: 'system-ui' },
+  { label: t('settings.fontFamilies.arial'), value: 'Arial' },
+  { label: t('settings.fontFamilies.yahei'), value: 'Microsoft YaHei' },
+  { label: t('settings.fontFamilies.source'), value: 'Noto Sans SC' },
+  { label: t('settings.fontFamilies.roboto'), value: 'Roboto' }
 ]
 
 // 加载设置
@@ -93,7 +97,11 @@ const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
     const result = await window.api.saveSettings(cleanSettings)
     if (result) {
       console.log('设置已实时保存并应用')
-      // 设置已通过IPC事件应用，不需要额外处理
+      
+      // 如果语言发生变化，更新i18n状态
+      if (cleanSettings.language !== language.value) {
+        setLanguage(cleanSettings.language)
+      }
     } else {
       console.error('实时保存设置失败：返回结果为false')
     }
@@ -121,17 +129,23 @@ const saveSettings = async () => {
     
     if (result) {
       console.log('设置保存成功')
+      
+      // 如果语言发生变化，更新i18n状态
+      if (cleanSettings.language !== language.value) {
+        setLanguage(cleanSettings.language)
+      }
+      
       // 通知父组件
       emit('save', cleanSettings)
       // 关闭对话框
       emit('update:visible', false)
     } else {
       console.error('设置保存失败：返回结果为false')
-      alert('设置保存失败，请重试')
+      alert(t('settings.saveError'))
     }
   } catch (error: any) {
     console.error('保存设置出错:', error)
-    alert(`设置保存失败: ${error?.message || '未知错误'}`)
+    alert(`${t('settings.saveError')}: ${error?.message || t('common.unknown')}`)
   }
 }
 
@@ -166,7 +180,7 @@ onMounted(() => {
     <div class="dialog-overlay" v-if="visible" :class="{ 'dark-theme': isDarkTheme }" @click.self="cancelSettings">
       <div class="dialog-container" :class="{ 'dark-theme': isDarkTheme }">
         <div class="dialog-header">
-          <h3>全局设置</h3>
+          <h3>{{ t('settings.title') }}</h3>
           <button class="close-button" @click="cancelSettings">&times;</button>
         </div>
         
@@ -174,7 +188,7 @@ onMounted(() => {
           <div class="form">
             <!-- 语言设置 -->
             <div class="form-input">
-              <label for="language">界面语言</label>
+              <label for="language">{{ t('settings.language') }}</label>
               <select 
                 id="language" 
                 v-model="formData.language"
@@ -192,7 +206,7 @@ onMounted(() => {
             
             <!-- 字体大小设置 -->
             <div class="form-input">
-              <label for="fontSize">界面字号</label>
+              <label for="fontSize">{{ t('settings.fontSize') }}</label>
               <select 
                 id="fontSize" 
                 v-model="formData.fontSize"
@@ -210,7 +224,7 @@ onMounted(() => {
             
             <!-- 字体设置 -->
             <div class="form-input">
-              <label for="fontFamily">界面字体</label>
+              <label for="fontFamily">{{ t('settings.fontFamily') }}</label>
               <select 
                 id="fontFamily" 
                 v-model="formData.fontFamily"
@@ -229,8 +243,8 @@ onMounted(() => {
         </div>
         
         <div class="dialog-footer">
-          <button class="cancel-button" @click="cancelSettings">取消</button>
-          <button class="save-button" @click="saveSettings">保存</button>
+          <button class="cancel-button" @click="cancelSettings">{{ t('common.cancel') }}</button>
+          <button class="save-button" @click="saveSettings">{{ t('common.save') }}</button>
         </div>
       </div>
     </div>

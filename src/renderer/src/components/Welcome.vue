@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from '../i18n'
+
+// 使用i18n
+const { t } = useI18n()
 
 // 定义欢迎页面的属性
 const props = defineProps<{
@@ -37,7 +41,7 @@ const openLocalTerminal = () => {
 
 <template>
   <div class="welcome-section" :class="{ 'dark-theme': props.isDarkTheme }">
-    <h1>欢迎使用 OShell</h1>
+    <h1>{{ t('app.welcome') }}</h1>
     
     <div class="quick-actions">
       <div 
@@ -46,14 +50,14 @@ const openLocalTerminal = () => {
         :class="{ 'disabled': isClickDisabled }"
       >
         <div class="action-icon local-terminal-icon"></div>
-        <h3>打开本地终端</h3>
-        <p>在本地系统中打开命令行终端</p>
+        <h3>{{ t('terminal.openLocalTerminal') }}</h3>
+        <p>{{ t('terminal.localDescription') }}</p>
       </div>
       
       <div class="action-card info-card">
         <div class="action-icon info-icon"></div>
-        <h3>SSH连接</h3>
-        <p>从右侧连接管理面板选择一个SSH连接</p>
+        <h3>{{ t('terminal.ssh') }}</h3>
+        <p>{{ t('terminal.sshDescription') }}</p>
       </div>
     </div>
   </div>
