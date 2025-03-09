@@ -11,6 +11,7 @@ import Welcome from './components/Welcome.vue'
 import TerminalView from './components/TerminalView.vue'
 import FileManager from './components/FileManager.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import AIAssistant from './components/AIAssistant.vue'
 
 // 定义TerminalView组件实例的类型
 interface TerminalViewInstance {
@@ -269,6 +270,12 @@ const handleSaveSettings = async (settings: any) => {
   }
 }
 
+// AI助手状态
+const isAIAssistantVisible = ref(false)
+const toggleAIAssistant = () => {
+  isAIAssistantVisible.value = !isAIAssistantVisible.value
+}
+
 // 在组件加载后设置键盘快捷键
 onMounted(() => {
   // 设置主题切换快捷键
@@ -286,6 +293,11 @@ onMounted(() => {
     // Alt+S 打开设置
     if (e.altKey && e.key === 's') {
       settingsDialogVisible.value = true
+    }
+    
+    // Alt+A 打开/关闭AI助手
+    if (e.altKey && e.key === 'a') {
+      toggleAIAssistant()
     }
   })
 })
@@ -337,7 +349,7 @@ onMounted(() => {
           />
         </div>
         <!-- AI助手按钮 -->
-        <div class="ai-toggle">
+        <div class="ai-toggle" @click="toggleAIAssistant">
           <img
             :src="BrainIcon"
             alt="AI助手"
@@ -348,7 +360,7 @@ onMounted(() => {
         <div class="settings-toggle" @click="settingsDialogVisible = true">
           <img
             :src="isDarkTheme ? SettingsNightIcon : SettingsDayIcon"
-            alt="'设置'"
+            :alt="'设置'"
             class="settings-icon"
           />
         </div>
@@ -419,11 +431,19 @@ onMounted(() => {
       ></div>
     </div>
 
+    <!-- 将AI助手浮窗移到最后，确保它位于整个应用上方 -->
     <!-- 设置对话框 -->
     <SettingsDialog
       v-model:visible="settingsDialogVisible"
       :is-dark-theme="isDarkTheme"
       @save="handleSaveSettings"
+    />
+    
+    <!-- AI助手浮窗 -->
+    <AIAssistant
+      v-model:visible="isAIAssistantVisible"
+      :is-dark-theme="isDarkTheme"
+      @close="isAIAssistantVisible = false"
     />
   </div>
 </template>
@@ -519,12 +539,9 @@ onMounted(() => {
 }
 
 /* 主题切换按钮样式 */
-.theme-toggle,
-.settings-toggle,
-.ai-toggle {
-  position: relative;
-  width: 32px;
-  height: 32px;
+.theme-toggle {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -532,31 +549,105 @@ onMounted(() => {
   background-color: rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   transition: all 0.2s ease-in-out;
+  z-index: 1000;
+  position: relative;
+  margin-bottom: 10px;
 }
 
-.dark-theme .theme-toggle,
-.dark-theme .settings-toggle,
-.dark-theme .ai-toggle {
+.dark-theme .theme-toggle {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-.theme-toggle:hover,
-.settings-toggle:hover,
-.ai-toggle:hover {
+.theme-toggle:hover {
   background-color: rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
-.dark-theme .theme-toggle:hover,
-.dark-theme .settings-toggle:hover,
-.dark-theme .ai-toggle:hover {
+.dark-theme .theme-toggle:hover {
   background-color: rgba(255, 255, 255, 0.2);
 }
 
-.theme-icon,
-.settings-icon,
-.ai-icon {
-  width: 20px;
-  height: 20px;
+.theme-toggle::after {
+  content: '主题切换';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -20px;
+  font-size: 10px;
+  color: var(--text-color-light);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.theme-toggle:hover::after {
+  opacity: 1;
+}
+
+.theme-icon {
+  width: 22px;
+  height: 22px;
+  filter: brightness(0.8) contrast(1.2);
+}
+
+.dark-theme .theme-icon {
+  filter: brightness(1.2) contrast(1.2);
+}
+
+/* 设置按钮样式 */
+.settings-toggle {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  transition: all 0.2s ease-in-out;
+  z-index: 1000;
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.dark-theme .settings-toggle {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.settings-toggle:hover {
+  background-color: rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.dark-theme .settings-toggle:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.settings-toggle::after {
+  content: '设置';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -20px;
+  font-size: 10px;
+  color: var(--text-color-light);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.settings-toggle:hover::after {
+  opacity: 1;
+}
+
+.settings-icon {
+  width: 22px;
+  height: 22px;
+  filter: brightness(0.8) contrast(1.2);
+}
+
+.dark-theme .settings-icon {
+  filter: brightness(1.2) contrast(1.2);
 }
 
 /* 调整resize-handle的位置 */
@@ -844,9 +935,8 @@ onMounted(() => {
 
 /* AI助手按钮样式 */
 .ai-toggle {
-  position: relative;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -855,6 +945,8 @@ onMounted(() => {
   border-radius: 8px;
   transition: all 0.2s ease-in-out;
   z-index: 1000;
+  position: relative;
+  margin-bottom: 10px;
 }
 
 .dark-theme .ai-toggle {
@@ -863,15 +955,38 @@ onMounted(() => {
 
 .ai-toggle:hover {
   background-color: rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
 }
 
 .dark-theme .ai-toggle:hover {
   background-color: rgba(255, 255, 255, 0.2);
 }
 
+.ai-toggle::after {
+  content: 'AI助手';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -20px;
+  font-size: 10px;
+  color: var(--text-color-light);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  white-space: nowrap;
+}
+
+.ai-toggle:hover::after {
+  opacity: 1;
+}
+
 .ai-icon {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+  filter: brightness(0.8) contrast(1.2);
+}
+
+.dark-theme .ai-icon {
+  filter: brightness(1.2) contrast(1.2);
 }
 
 /* 设置保存提示样式 */

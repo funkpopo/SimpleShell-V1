@@ -41,6 +41,9 @@ const settingsPath = is.dev
   ? path.join(process.cwd(), 'config.json')
   : path.join(app.getPath('userData'), 'config.json')
 
+// 聊天历史记录文件路径
+const chatHistoryPath = path.join(app.getPath('userData'), 'chathistory.json')
+
 // 输出环境信息
 // console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
 // console.log('连接配置文件路径:', connectionsFilePath)
@@ -134,6 +137,66 @@ function saveConnections(organizations: Organization[]): boolean {
   } catch (error) {
     console.error('保存连接配置失败，错误详情:', error)
     return false
+  }
+}
+
+// 加载聊天历史记录
+function loadChatHistory() {
+  try {
+    if (fs.existsSync(chatHistoryPath)) {
+      const data = fs.readFileSync(chatHistoryPath, 'utf-8')
+      return JSON.parse(data)
+    } else {
+      // 如果文件不存在，创建一个空的历史记录
+      const emptyHistory = { sessions: [] }
+      fs.writeFileSync(chatHistoryPath, JSON.stringify(emptyHistory, null, 2), 'utf-8')
+      return emptyHistory
+    }
+  } catch (error) {
+    console.error('加载聊天历史失败:', error)
+    return { sessions: [] }
+  }
+}
+
+// 保存聊天会话
+function saveChatSession(session: any) {
+  try {
+    const history = loadChatHistory()
+    
+    // 找到现有会话的索引
+    const existingIndex = history.sessions.findIndex((s: any) => s.id === session.id)
+    
+    if (existingIndex !== -1) {
+      // 更新现有会话
+      history.sessions[existingIndex] = session
+    } else {
+      // 添加新会话
+      history.sessions.push(session)
+    }
+    
+    // 保存回文件
+    fs.writeFileSync(chatHistoryPath, JSON.stringify(history, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('保存聊天会话失败:', error)
+    return { success: false, error: (error as Error).message }
+  }
+}
+
+// 删除聊天会话
+function deleteHistorySession(sessionId: string) {
+  try {
+    const history = loadChatHistory()
+    
+    // 过滤掉要删除的会话
+    history.sessions = history.sessions.filter((s: any) => s.id !== sessionId)
+    
+    // 保存回文件
+    fs.writeFileSync(chatHistoryPath, JSON.stringify(history, null, 2), 'utf-8')
+    return { success: true }
+  } catch (error) {
+    console.error('删除聊天会话失败:', error)
+    return { success: false, error: (error as Error).message }
   }
 }
 
@@ -693,21 +756,23 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-  })
+  if (mainWindow) {
+    mainWindow.on('ready-to-show', () => {
+      mainWindow?.show()
+    })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
+    mainWindow.webContents.setWindowOpenHandler((details) => {
+      shell.openExternal(details.url)
+      return { action: 'deny' }
+    })
+  }
 
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow?.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow?.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -1160,6 +1225,19 @@ app.whenReady().then(() => {
         return { success: false, error: error.message };
       }
     });
+
+    // AI聊天历史记录处理
+    ipcMain.handle('chat:load-history', async () => {
+      return loadChatHistory()
+    })
+    
+    ipcMain.handle('chat:save-session', async (_event, session) => {
+      return saveChatSession(session)
+    })
+    
+    ipcMain.handle('chat:delete-session', async (_event, sessionId) => {
+      return deleteHistorySession(sessionId)
+    })
   }
   
   setupIPCHandlers()

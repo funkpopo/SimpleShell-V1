@@ -20,6 +20,14 @@ const zhCN = {
     title: 'OShell - 简单Shell',
     welcome: '欢迎使用 OShell'
   },
+  aiAssistant: {
+    title: 'AI助手',
+    welcome: '您好！我是您的AI助手，有什么可以帮助您的吗？',
+    inputPlaceholder: '请输入您的问题...',
+    send: '发送',
+    response: '这是模拟的AI响应，实际项目中可以接入OpenAI等AI服务。',
+    thinking: '思考中...'
+  },
   settings: {
     title: '全局设置',
     language: '界面语言',

@@ -132,6 +132,12 @@ declare interface API {
   onTransferCancelled: (callback: (data: {
     id: string;
   }) => void) => () => void;
+
+  // AI聊天相关方法
+  loadChatHistory: () => Promise<{sessions: any[]}>
+  saveChatSession: (session: any) => Promise<{success: boolean, error?: string}>
+  deleteHistorySession: (sessionId: string) => Promise<{success: boolean, error?: string}>
+  onAppClose: (callback: () => Promise<void>) => void
 }
 
 interface Window {

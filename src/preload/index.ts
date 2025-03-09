@@ -199,6 +199,32 @@ const api = {
     const handler = (_: any, data: any) => callback(data)
     ipcRenderer.on('sftp:transferCancelled', handler)
     return () => ipcRenderer.removeListener('sftp:transferCancelled', handler)
+  },
+  
+  // AI聊天相关方法
+  loadChatHistory: async (): Promise<any> => {
+    return await ipcRenderer.invoke('chat:load-history')
+  },
+  
+  saveChatSession: async (session: any): Promise<any> => {
+    return await ipcRenderer.invoke('chat:save-session', session)
+  },
+  
+  deleteHistorySession: async (sessionId: string): Promise<any> => {
+    return await ipcRenderer.invoke('chat:delete-session', sessionId)
+  },
+  
+  // 注册窗口关闭事件监听
+  onAppClose: (callback: () => Promise<void>): void => {
+    // 创建一个函数，用于在窗口关闭前触发回调
+    const handleBeforeUnload = async () => {
+      await callback()
+    }
+    
+    // 添加窗口关闭前的事件监听
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    // 不需要返回取消函数，因为这个是应用级别的事件
   }
 }
 
