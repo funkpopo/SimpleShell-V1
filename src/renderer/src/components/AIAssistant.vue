@@ -2,6 +2,14 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from '../i18n'
 
+// 导入图标资源
+import historyDayIcon from '../assets/history-day.svg'
+import historyNightIcon from '../assets/history-night.svg'
+import minimizeDayIcon from '../assets/minimize-day.svg'
+import minimizeNightIcon from '../assets/minimize-night.svg'
+import closeDayIcon from '../assets/close-day.svg'
+import closeNightIcon from '../assets/close-night.svg'
+
 // 使用i18n
 const { t } = useI18n()
 
@@ -11,6 +19,11 @@ const props = defineProps<{
   isDarkTheme: boolean
 }>()
 
+// 动态图标计算属性
+const historyIcon = computed(() => props.isDarkTheme ? historyNightIcon : historyDayIcon)
+const minimizeIcon = computed(() => props.isDarkTheme ? minimizeNightIcon : minimizeDayIcon)
+const closeIcon = computed(() => props.isDarkTheme ? closeNightIcon : closeDayIcon)
+
 // 定义事件
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
@@ -18,8 +31,8 @@ const emit = defineEmits<{
 }>()
 
 // 浮窗位置
-const posX = ref(20)
-const posY = ref(20)
+const posX = ref(window.innerWidth - 350)  // 默认放置在右侧
+const posY = ref(80)  // 距离顶部80px
 const startX = ref(0)
 const startY = ref(0)
 const isDragging = ref(false)
@@ -66,6 +79,7 @@ const isLoading = ref(false)
 
 // 本地存储密钥
 const STORAGE_KEY = 'ai_assistant_messages'
+const POSITION_STORAGE_KEY = 'ai_assistant_position'
 
 // 示例回答集
 const sampleResponses = [
@@ -80,7 +94,7 @@ const sampleResponses = [
 // 浮窗样式
 const floatingWindowStyle = computed(() => {
   return {
-    transform: `translate(${posX.value}px, ${posY.value}px)`
+    transform: `translate3d(${posX.value}px, ${posY.value}px, 0)`
   }
 })
 
@@ -113,13 +127,14 @@ const onDrag = (e: MouseEvent) => {
     let newX = e.clientX - startX.value
     let newY = e.clientY - startY.value
     
-    const { windowWidth, windowHeight, floatingWidth, floatingHeight } = windowDimensions.value
+    const { windowWidth, windowHeight, floatingWidth } = windowDimensions.value
     
-    // 边界检测
-    newX = Math.max(0, newX)
+    // 增强的边界检测，确保至少有20px在视口内
+    const minVisiblePortion = 40
+    newX = Math.max(-floatingWidth + minVisiblePortion, newX)
     newY = Math.max(0, newY)
-    newX = Math.min(windowWidth - floatingWidth, newX)
-    newY = Math.min(windowHeight - floatingHeight, newY)
+    newX = Math.min(windowWidth - minVisiblePortion, newX)
+    newY = Math.min(windowHeight - minVisiblePortion, newY)
     
     // 更新位置
     posX.value = newX
@@ -131,6 +146,13 @@ const onDrag = (e: MouseEvent) => {
 const endDrag = () => {
   if (isDragging.value) {
     isDragging.value = false
+    
+    // 额外的安全检查，确保窗口在可视区域内
+    ensureWindowVisible()
+    
+    // 保存位置到localStorage
+    saveWindowPosition()
+    
     // 清除不再需要的参考数据
     windowDimensions.value = {
       windowWidth: 0,
@@ -139,6 +161,253 @@ const endDrag = () => {
       floatingHeight: 450
     }
   }
+}
+
+// 确保窗口可见
+const ensureWindowVisible = () => {
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
+  const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
+  
+  if (floatingWindow) {
+    const floatingWidth = floatingWindow.offsetWidth
+    const floatingHeight = floatingWindow.offsetHeight
+    
+    // 确保至少有100px的窗口在视口内
+    const minVisiblePortion = 100
+    
+    // 检查并修正X位置
+    if (posX.value < -floatingWidth + minVisiblePortion) {
+      posX.value = -floatingWidth + minVisiblePortion
+    } else if (posX.value > windowWidth - minVisiblePortion) {
+      posX.value = windowWidth - minVisiblePortion
+    }
+    
+    // 检查并修正Y位置
+    if (posY.value < 0) {
+      posY.value = 0
+    } else if (posY.value > windowHeight - floatingHeight + minVisiblePortion) {
+      posY.value = windowHeight - floatingHeight + minVisiblePortion
+    }
+  }
+}
+
+// 保存窗口位置
+const saveWindowPosition = () => {
+  try {
+    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify({
+      x: posX.value,
+      y: posY.value
+    }))
+  } catch (error) {
+    console.error('保存窗口位置失败:', error)
+  }
+}
+
+// 加载窗口位置
+const loadWindowPosition = () => {
+  try {
+    const savedPosition = localStorage.getItem(POSITION_STORAGE_KEY)
+    if (savedPosition) {
+      const position = JSON.parse(savedPosition)
+      posX.value = position.x
+      posY.value = position.y
+      
+      // 确保加载的位置有效且在可视区域内
+      setTimeout(ensureWindowVisible, 0)
+    }
+  } catch (error) {
+    console.error('加载窗口位置失败:', error)
+  }
+}
+
+// 监听窗口大小变化，确保浮窗位置有效
+const handleResize = () => {
+  // 如果不是正在拖拽，才执行自动调整
+  if (!isDragging.value) {
+    ensureWindowVisible()
+  }
+}
+
+// 添加全局事件监听
+onMounted(async () => {
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', endDrag)
+  window.addEventListener('resize', handleResize)
+  
+  // 向主进程注册窗口关闭事件监听
+  window.api.onAppClose(async () => {
+    await saveCurrentSession()
+    saveWindowPosition()
+  })
+  
+  // 加载消息历史
+  await loadMessages()
+  
+  // 加载窗口位置
+  loadWindowPosition()
+})
+
+// 清理全局事件
+onUnmounted(() => {
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', endDrag)
+  window.removeEventListener('resize', handleResize)
+  
+  // 保存当前会话
+  saveCurrentSession()
+})
+
+// 监听消息变化，保存历史到localStorage
+watch(messages, () => {
+  saveMessagesToLocalStorage()
+}, { deep: true })
+
+// 关闭窗口
+const closeWindow = async () => {
+  // 保存当前会话
+  await saveCurrentSession()
+  
+  // 重置消息
+  messages.value = []
+  localStorage.removeItem(STORAGE_KEY)
+  
+  // 关闭窗口
+  emit('update:visible', false)
+  emit('close')
+}
+
+// 获取随机回答
+const getRandomResponse = (question: string): string => {
+  // 简单关键词匹配
+  if (question.includes('你好') || question.includes('hi') || question.includes('hello')) {
+    return '你好！我是AI助手，有什么可以帮助你的吗？'
+  }
+  
+  if (question.includes('谢谢') || question.includes('感谢')) {
+    return '不客气！如果还有其他问题，随时可以问我。'
+  }
+  
+  // 返回随机示例回答
+  return sampleResponses[Math.floor(Math.random() * sampleResponses.length)]
+}
+
+// 模拟AI思考时间
+const getThinkingTime = (message: string): number => {
+  // 根据消息长度计算思考时间
+  const baseTime = 800
+  const charTime = 15 // 每个字符增加的时间（毫秒）
+  return Math.min(baseTime + message.length * charTime, 3000) // 最长3秒
+}
+
+// 发送消息
+const sendMessage = () => {
+  const message = userInput.value.trim()
+  if (!message) return
+  
+  // 添加用户消息
+  messages.value.push({
+    type: 'user',
+    content: message,
+    timestamp: Date.now()
+  })
+  
+  // 清空输入框
+  userInput.value = ''
+  
+  // 滚动到底部
+  scrollToBottom()
+  
+  // 模拟AI响应
+  isLoading.value = true
+  
+  // 根据消息长度模拟思考时间
+  const thinkingTime = getThinkingTime(message)
+  
+  setTimeout(() => {
+    // 添加AI响应
+    messages.value.push({
+      type: 'assistant',
+      content: getRandomResponse(message),
+      timestamp: Date.now()
+    })
+    isLoading.value = false
+    
+    // 滚动到底部
+    scrollToBottom()
+  }, thinkingTime)
+}
+
+// 按键事件处理
+const handleKeyDown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    sendMessage()
+  }
+}
+
+// 滚动到底部
+const scrollToBottom = () => {
+  setTimeout(() => {
+    const messageContainer = document.querySelector('.messages-container')
+    if (messageContainer) {
+      messageContainer.scrollTop = messageContainer.scrollHeight
+    }
+  }, 50)
+}
+
+// 格式化时间戳
+const formatTimestamp = (timestamp: number): string => {
+  const date = new Date(timestamp)
+  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+}
+
+// 格式化日期
+const formatDate = (timestamp: number): string => {
+  const date = new Date(timestamp)
+  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
+}
+
+// 监听可见性变化
+watch(() => props.visible, (newValue) => {
+  if (newValue) {
+    // 当浮窗显示时，滚动到底部
+    scrollToBottom()
+  }
+})
+
+// 格式化消息，支持代码块和简单的Markdown
+const formatMessage = (content: string): string => {
+  if (!content) return ''
+  
+  // 处理代码块: ```code```
+  content = content.replace(/```([\s\S]*?)```/g, (_, code) => {
+    return `<div class="code-block"><pre>${escapeHtml(code.trim())}</pre></div>`
+  })
+  
+  // 处理行内代码: `code`
+  content = content.replace(/`([^`]+)`/g, '<code>$1</code>')
+  
+  // 处理换行符
+  content = content.replace(/\n/g, '<br>')
+  
+  return content
+}
+
+// HTML转义
+const escapeHtml = (unsafe: string): string => {
+  return unsafe
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+// 最小化窗口
+const minimizeWindow = () => {
+  // 不清除会话内容，只隐藏窗口
+  emit('update:visible', false)
 }
 
 // 切换历史记录面板
@@ -288,204 +557,6 @@ const saveMessagesToLocalStorage = () => {
     console.error('保存AI对话历史到localStorage失败:', error)
   }
 }
-
-// 监听窗口大小变化，确保浮窗位置有效
-const handleResize = () => {
-  const windowWidth = window.innerWidth
-  const windowHeight = window.innerHeight
-  const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
-  
-  if (floatingWindow) {
-    const floatingWidth = floatingWindow.offsetWidth
-    const floatingHeight = floatingWindow.offsetHeight
-    
-    // 如果浮窗位置超出视口，调整到有效范围
-    if (posX.value + floatingWidth > windowWidth) {
-      posX.value = Math.max(0, windowWidth - floatingWidth)
-    }
-    
-    if (posY.value + floatingHeight > windowHeight) {
-      posY.value = Math.max(0, windowHeight - floatingHeight)
-    }
-  }
-}
-
-// 添加全局事件监听
-onMounted(async () => {
-  document.addEventListener('mousemove', onDrag)
-  document.addEventListener('mouseup', endDrag)
-  window.addEventListener('resize', handleResize)
-  
-  // 向主进程注册窗口关闭事件监听
-  window.api.onAppClose(async () => {
-    await saveCurrentSession()
-  })
-  
-  // 加载消息历史
-  await loadMessages()
-})
-
-// 清理全局事件
-onUnmounted(() => {
-  document.removeEventListener('mousemove', onDrag)
-  document.removeEventListener('mouseup', endDrag)
-  window.removeEventListener('resize', handleResize)
-  
-  // 保存当前会话
-  saveCurrentSession()
-})
-
-// 监听消息变化，保存历史到localStorage
-watch(messages, () => {
-  saveMessagesToLocalStorage()
-}, { deep: true })
-
-// 关闭窗口
-const closeWindow = async () => {
-  // 保存当前会话
-  await saveCurrentSession()
-  
-  // 重置消息
-  messages.value = []
-  localStorage.removeItem(STORAGE_KEY)
-  
-  // 关闭窗口
-  emit('update:visible', false)
-  emit('close')
-}
-
-// 获取随机回答
-const getRandomResponse = (question: string): string => {
-  // 简单关键词匹配
-  if (question.includes('你好') || question.includes('hi') || question.includes('hello')) {
-    return '你好！我是AI助手，有什么可以帮助你的吗？'
-  }
-  
-  if (question.includes('谢谢') || question.includes('感谢')) {
-    return '不客气！如果还有其他问题，随时可以问我。'
-  }
-  
-  // 返回随机示例回答
-  return sampleResponses[Math.floor(Math.random() * sampleResponses.length)]
-}
-
-// 模拟AI思考时间
-const getThinkingTime = (message: string): number => {
-  // 根据消息长度计算思考时间
-  const baseTime = 800
-  const charTime = 15 // 每个字符增加的时间（毫秒）
-  return Math.min(baseTime + message.length * charTime, 3000) // 最长3秒
-}
-
-// 发送消息
-const sendMessage = () => {
-  const message = userInput.value.trim()
-  if (!message) return
-  
-  // 添加用户消息
-  messages.value.push({
-    type: 'user',
-    content: message,
-    timestamp: Date.now()
-  })
-  
-  // 清空输入框
-  userInput.value = ''
-  
-  // 滚动到底部
-  scrollToBottom()
-  
-  // 模拟AI响应
-  isLoading.value = true
-  
-  // 根据消息长度模拟思考时间
-  const thinkingTime = getThinkingTime(message)
-  
-  setTimeout(() => {
-    // 添加AI响应
-    messages.value.push({
-      type: 'assistant',
-      content: getRandomResponse(message),
-      timestamp: Date.now()
-    })
-    isLoading.value = false
-    
-    // 滚动到底部
-    scrollToBottom()
-  }, thinkingTime)
-}
-
-// 按键事件处理
-const handleKeyDown = (e: KeyboardEvent) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault()
-    sendMessage()
-  }
-}
-
-// 滚动到底部
-const scrollToBottom = () => {
-  setTimeout(() => {
-    const messageContainer = document.querySelector('.messages-container')
-    if (messageContainer) {
-      messageContainer.scrollTop = messageContainer.scrollHeight
-    }
-  }, 50)
-}
-
-// 格式化时间戳
-const formatTimestamp = (timestamp: number): string => {
-  const date = new Date(timestamp)
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-}
-
-// 格式化日期
-const formatDate = (timestamp: number): string => {
-  const date = new Date(timestamp)
-  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
-}
-
-// 监听可见性变化
-watch(() => props.visible, (newValue) => {
-  if (newValue) {
-    // 当浮窗显示时，滚动到底部
-    scrollToBottom()
-  }
-})
-
-// 格式化消息，支持代码块和简单的Markdown
-const formatMessage = (content: string): string => {
-  if (!content) return ''
-  
-  // 处理代码块: ```code```
-  content = content.replace(/```([\s\S]*?)```/g, (match, code) => {
-    return `<div class="code-block"><pre>${escapeHtml(code.trim())}</pre></div>`
-  })
-  
-  // 处理行内代码: `code`
-  content = content.replace(/`([^`]+)`/g, '<code>$1</code>')
-  
-  // 处理换行符
-  content = content.replace(/\n/g, '<br>')
-  
-  return content
-}
-
-// HTML转义
-const escapeHtml = (unsafe: string): string => {
-  return unsafe
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;')
-}
-
-// 最小化窗口
-const minimizeWindow = () => {
-  // 不清除会话内容，只隐藏窗口
-  emit('update:visible', false)
-}
 </script>
 
 <template>
@@ -501,17 +572,14 @@ const minimizeWindow = () => {
       <div class="window-title">{{ t('aiAssistant.title') }}</div>
       <div class="window-controls">
         <button class="window-btn history-btn" @click="toggleHistory">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71V3.5z"/>
-            <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0z"/>
-          </svg>
+          <img :src="historyIcon" alt="History" width="16" height="16">
         </button>
         <button class="window-btn minimize-btn" @click="minimizeWindow">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-            <path d="M3.5 8a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 0 1H4a.5.5 0 0 1-.5-.5z"/>
-          </svg>
+          <img :src="minimizeIcon" alt="Minimize" width="16" height="16">
         </button>
-        <button class="window-close" @click="closeWindow">&times;</button>
+        <button class="window-close" @click="closeWindow">
+          <img :src="closeIcon" alt="Close" width="16" height="16">
+        </button>
       </div>
     </div>
     
@@ -670,54 +738,60 @@ const minimizeWindow = () => {
   justify-content: center;
   border-radius: 4px;
   cursor: pointer;
-  color: #777;
   padding: 0;
   transition: all 0.2s;
 }
 
 .window-btn:hover {
   background-color: rgba(0, 0, 0, 0.1);
-  color: #333;
-}
-
-.dark-theme .window-btn {
-  color: #aaa;
 }
 
 .dark-theme .window-btn:hover {
   background-color: rgba(255, 255, 255, 0.1);
-  color: #fff;
+}
+
+.window-btn img {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.window-btn:hover img {
+  opacity: 1;
 }
 
 .window-close {
   background: none;
   border: none;
-  font-size: 20px;
-  line-height: 1;
-  cursor: pointer;
-  color: #999;
-  padding: 0;
   height: 24px;
   width: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
+  cursor: pointer;
+  padding: 0;
   transition: all 0.2s;
 }
 
 .window-close:hover {
   background-color: rgba(244, 67, 54, 0.1);
-  color: #f44336;
 }
 
-.dark-theme .window-close {
-  color: #aaa;
+.window-close img {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.window-close:hover img {
+  opacity: 1;
 }
 
 .dark-theme .window-close:hover {
   background-color: rgba(244, 67, 54, 0.2);
-  color: #ef5350;
 }
 
 /* 历史记录面板 */
