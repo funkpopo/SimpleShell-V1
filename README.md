@@ -32,7 +32,7 @@ SSH连接配置保存在 `connections.json` 文件中。该文件包含了所有
 
 1. 测试electron
    ```
-   npm run electron:dev
+   npm run dev
    ```
 
 ---
