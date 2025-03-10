@@ -133,6 +133,9 @@ declare interface API {
     id: string;
   }) => void) => () => void;
 
+  // 窗口状态变化监听
+  onWindowStateChange: (callback: (data: { isFocused: boolean }) => void) => () => void;
+
   // AI聊天相关方法
   loadChatHistory: () => Promise<{sessions: any[]}>
   saveChatSession: (session: any) => Promise<{success: boolean, error?: string}>

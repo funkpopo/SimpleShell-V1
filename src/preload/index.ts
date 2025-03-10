@@ -133,6 +133,15 @@ const api = {
     return await ipcRenderer.invoke(channel, ...args)
   },
   
+  // 窗口状态监听（焦点变化等）
+  onWindowStateChange: (callback: (data: { isFocused: boolean }) => void): (() => void) => {
+    const handler = (_: any, data: any) => callback(data)
+    ipcRenderer.on('window:state-change', handler)
+    return () => {
+      ipcRenderer.removeListener('window:state-change', handler)
+    }
+  },
+  
   // SFTP相关方法
   sftpReadDir: async (params: { connectionId: string; path: string }): Promise<any> => {
     return await ipcRenderer.invoke('sftp:readDir', params)
@@ -225,6 +234,16 @@ const api = {
     window.addEventListener('beforeunload', handleBeforeUnload)
     
     // 不需要返回取消函数，因为这个是应用级别的事件
+  },
+  
+  // 获取lexer规则文件
+  getLexerFile: async (lexerType: string) => {
+    try {
+      return await ipcRenderer.invoke('get-lexer-file', lexerType)
+    } catch (error: any) {
+      console.error('获取lexer规则文件失败:', error)
+      return { success: false, error: error.message || '未知错误' }
+    }
   }
 }
 

@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain} from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -496,16 +496,16 @@ ipcMain.handle('ssh:shell', async (_, { connectionId, cols, rows }) => {
         
         // 设置数据接收事件
         stream.on('data', (data) => {
-          const win = BrowserWindow.getFocusedWindow()
-          if (win) {
-            win.webContents.send('ssh:data', { connectionId, shellId, data: data.toString() })
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ssh:data', { connectionId, shellId, data: data.toString() })
           }
         })
         
         stream.on('close', () => {
           console.log(`Shell ${shellId} 关闭`)
-          const win = BrowserWindow.getFocusedWindow()
-          win?.webContents.send('ssh:close', { connectionId, shellId })
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ssh:close', { connectionId, shellId })
+          }
           connInfo.shells.delete(shellId)
         })
         
@@ -752,13 +752,31 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       nodeIntegration: true,
-      contextIsolation: true
+      contextIsolation: true,
+      backgroundThrottling: false // 禁用后台节流，使应用在后台也能正常运行
     }
   })
 
   if (mainWindow) {
     mainWindow.on('ready-to-show', () => {
       mainWindow?.show()
+    })
+
+    // 处理窗口失焦和获得焦点事件
+    mainWindow.on('blur', () => {
+      console.log('窗口失去焦点，但应用继续在后台运行')
+      // 通知渲染进程窗口状态变化
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('window:state-change', { isFocused: false })
+      }
+    })
+
+    mainWindow.on('focus', () => {
+      console.log('窗口获得焦点')
+      // 通知渲染进程窗口状态变化
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('window:state-change', { isFocused: true })
+      }
     })
 
     mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -1238,6 +1256,25 @@ app.whenReady().then(() => {
     ipcMain.handle('chat:delete-session', async (_event, sessionId) => {
       return deleteHistorySession(sessionId)
     })
+
+    // 获取lexer规则文件内容
+    ipcMain.handle('get-lexer-file', async (_, lexerName) => {
+      try {
+        const filePath = getLexerFilePath(lexerName);
+        
+        // 检查文件是否存在
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf8');
+          return { success: true, content };
+        } else {
+          console.warn(`Lexer文件不存在: ${filePath}`);
+          return { success: false, error: 'Lexer文件不存在' };
+        }
+      } catch (error: any) {
+        console.error('获取Lexer文件失败:', error);
+        return { success: false, error: error.message || '未知错误' };
+      }
+    });
   }
   
   setupIPCHandlers()
@@ -1253,10 +1290,10 @@ app.whenReady().then(() => {
       const terminalInfo = localTerminals.get(result.id)
       if (terminalInfo && terminalInfo.pty) {
         terminalInfo.pty.onData((data: string) => {
-          const win = BrowserWindow.getFocusedWindow()
-          if (win) {
-            // 发送数据到渲染进程，使用明确的终端ID作为消息通道
-            win.webContents.send('terminal:data', { 
+          // 使用主窗口实例而不是获取当前焦点窗口
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            // 发送数据到渲染进程
+            mainWindow.webContents.send('terminal:data', { 
               id: result.id, 
               data 
             })
@@ -1266,7 +1303,7 @@ app.whenReady().then(() => {
               console.log(`终端[${result.id}]发送数据: ${shortData.replace(/\n/g, '\\n')}`)
             }
           } else {
-            console.log(`终端[${result.id}]数据无法发送：没有找到窗口`)
+            console.log(`终端[${result.id}]数据无法发送：主窗口不可用`)
           }
         })
         
@@ -1473,3 +1510,25 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     throw error
   }
 })
+
+// 获取应用程序的根目录
+function getAppPath() {
+  // 开发环境下，使用当前目录
+  if (is.dev) {
+    return process.cwd();
+  }
+  
+  // 生产环境下，使用应用程序目录
+  return path.dirname(app.getPath('exe'));
+}
+
+// 获取lexer规则文件路径
+function getLexerFilePath(lexerName: string) {
+  // 构建文件路径
+  const rootPath = getAppPath();
+  const devPath = path.join(rootPath, 'src', 'renderer', 'src', 'rules', `${lexerName}.lexer`);
+  const prodPath = path.join(rootPath, 'resources', 'rules', `${lexerName}.lexer`);
+  
+  // 开发环境和生产环境使用不同路径
+  return is.dev ? devPath : prodPath;
+}

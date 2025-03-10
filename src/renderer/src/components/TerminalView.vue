@@ -3,7 +3,10 @@ import { ref, onMounted, onBeforeUnmount, watchEffect, nextTick, computed } from
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { ITerminalAddon } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
+import { LexerHighlightAddon } from '../utils/LexerHighlightAddon'
+import { lexerService } from '../services/LexerService'
 
 // 添加类型断言，临时解决类型问题
 const api = (window as any).api;
@@ -34,6 +37,7 @@ interface TerminalTab {
   errorMessage?: string
   terminal?: Terminal
   fitAddon?: FitAddon
+  highlightAddon?: ITerminalAddon
   terminalElement?: HTMLElement
   dataUnsubscribe?: () => void
   closeUnsubscribe?: () => void
@@ -71,6 +75,11 @@ const errorMessage = ref('')
 // 用于追踪最后一次创建终端的时间，避免频繁创建
 const lastTerminalCreationTime = ref<number>(0);
 const TERMINAL_CREATION_DEBOUNCE_MS = 300; // 防抖时间（毫秒）
+
+// lexer规则加载状态
+const isLoadingLexer = ref(false);
+const lexerLoaded = ref(false);
+const lexerError = ref<string | null>(null);
 
 // 终端主题设置
 const darkTheme = {
@@ -268,13 +277,36 @@ const closeTab = (id: string) => {
 }
 
 // 初始化终端
-const initializeTerminal = (tab: TerminalTab) => {
+const initializeTerminal = async (tab: TerminalTab) => {
   console.log(`初始化标签页 ${tab.id} 的终端实例`);
   
   // 检查如果已有终端，先清理
   if (tab.terminal) {
     console.log(`标签页 ${tab.id} 已存在终端实例，先清理`);
     disposeTerminal(tab);
+  }
+  
+  // 尝试加载lexer规则文件
+  if (!lexerLoaded.value && !isLoadingLexer.value) {
+    isLoadingLexer.value = true;
+    try {
+      // 加载Linux lexer规则
+      const lexerContent = await lexerService.loadLexerFile('linux');
+      if (lexerContent) {
+        lexerLoaded.value = true;
+        console.log('成功加载lexer规则');
+      } else {
+        // 使用默认规则
+        console.log('使用默认lexer规则');
+        lexerService.setLexerContent('linux', lexerService.getDefaultLinuxLexer());
+        lexerLoaded.value = true;
+      }
+    } catch (error) {
+      console.error('加载lexer规则失败:', error);
+      lexerError.value = '无法加载语法高亮规则';
+    } finally {
+      isLoadingLexer.value = false;
+    }
   }
   
   // 创建一个新的终端
@@ -295,6 +327,18 @@ const initializeTerminal = (tab: TerminalTab) => {
   tab.fitAddon = new FitAddon();
   tab.terminal.loadAddon(tab.fitAddon);
   tab.terminal.loadAddon(new WebLinksAddon());
+  
+  // 添加高亮插件
+  if (lexerLoaded.value) {
+    try {
+      const lexerContent = await lexerService.loadLexerFile('linux');
+      tab.highlightAddon = new LexerHighlightAddon(props.isDarkTheme, lexerContent);
+      tab.terminal.loadAddon(tab.highlightAddon);
+      console.log(`为终端 ${tab.id} 加载了语法高亮插件`);
+    } catch (error) {
+      console.error('加载语法高亮插件失败:', error);
+    }
+  }
 
   // 在DOM挂载后打开终端
   nextTick(() => {
@@ -695,6 +739,17 @@ const disposeTerminal = (tab: TerminalTab) => {
       // 先取消输入监听，防止在dispose过程中触发
       tab.terminal.onData(() => {});
       
+      // 清理插件
+      if (tab.highlightAddon) {
+        console.log(`清理高亮插件，标签ID: ${tab.id}`);
+        try {
+          tab.highlightAddon.dispose();
+          tab.highlightAddon = undefined;
+        } catch (error) {
+          console.error(`高亮插件清理失败，标签ID: ${tab.id}，错误:`, error);
+        }
+      }
+      
       // 安全销毁终端
       tab.terminal.dispose();
       console.log(`终端实例销毁成功，标签ID: ${tab.id}`);
@@ -931,6 +986,14 @@ onBeforeUnmount(() => {
 watchEffect(() => {
   if (activeTab.value?.terminal) {
     activeTab.value.terminal.options.theme = currentTheme.value;
+    
+    // 更新高亮插件的主题
+    if (activeTab.value.highlightAddon) {
+      const typedAddon = activeTab.value.highlightAddon as LexerHighlightAddon;
+      if (typeof typedAddon.setTheme === 'function') {
+        typedAddon.setTheme(props.isDarkTheme);
+      }
+    }
   }
 });
 

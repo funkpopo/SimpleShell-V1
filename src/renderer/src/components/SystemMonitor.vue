@@ -48,22 +48,54 @@ const updateSystemInfo = async () => {
   try {
     const info = await window.api.getSystemInfo()
     systemInfo.value = info
+    lastUpdateTime = Date.now() // 更新最后更新时间戳
   } catch (error) {
     console.error('Failed to get system info:', error)
   }
 }
 
 let updateInterval: ReturnType<typeof setInterval>
+let isTimerPaused = false
+let lastUpdateTime = 0
+
+// 启动定时器
+const startTimer = () => {
+  clearInterval(updateInterval)
+  updateSystemInfo() // 立即执行一次更新
+  lastUpdateTime = Date.now()
+  updateInterval = setInterval(updateSystemInfo, 2000)
+  isTimerPaused = false
+}
+
+// 处理页面可见性变化
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    // 页面隐藏时记录状态，但保持定时器运行
+    // (backgroundThrottling: false 配置应该会确保定时器继续运行)
+    console.log('页面隐藏，继续在后台运行')
+  } else {
+    // 页面重新可见时，如果自上次更新已过去较长时间，立即执行更新
+    const timeSinceLastUpdate = Date.now() - lastUpdateTime
+    if (timeSinceLastUpdate > 3000) { // 如果超过3秒未更新
+      console.log('页面重新可见，立即更新数据')
+      updateSystemInfo()
+      lastUpdateTime = Date.now()
+    }
+  }
+}
 
 onMounted(() => {
-  updateSystemInfo()
-  updateInterval = setInterval(updateSystemInfo, 2000)
+  startTimer()
+  // 添加页面可见性事件监听
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
   if (updateInterval) {
     clearInterval(updateInterval)
   }
+  // 移除页面可见性事件监听
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 const formatBytes = (bytes: number): string => {
