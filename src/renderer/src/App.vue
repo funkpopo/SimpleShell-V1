@@ -448,7 +448,13 @@ onMounted(() => {
             class="monitor-section"
             :style="{ height: rightSidebarSplitPosition + '%' }"
           >
-            <SystemMonitor />
+            <SystemMonitor 
+              :ssh-connection="activeConnectionId ? {
+                id: activeConnectionId,
+                name: '',
+                connectionId: activeConnectionId
+              } : null"
+            />
           </div>
           
           <!-- 分隔线 -->

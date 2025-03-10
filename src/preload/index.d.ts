@@ -99,6 +99,11 @@ interface API {
   sshResizeTerminal(params: { connectionId: string, shellId: string, cols: number, rows: number }): void
   sshCloseShell(params: { connectionId: string, shellId: string }): void
   sshDisconnect(params: { connectionId: string }): void
+  sshExec(params: { connectionId: string, command: string }): Promise<{
+    success: boolean
+    output?: string
+    error?: string
+  }>
   createLocalTerminal(params: { cols: number, rows: number }): Promise<TerminalResult>
   sendTerminalInput(params: { id: string, data: string }): void
   resizeTerminal(params: { id: string, cols: number, rows: number }): void

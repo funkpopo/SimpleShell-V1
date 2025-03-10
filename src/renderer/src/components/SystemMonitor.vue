@@ -1,9 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useI18n } from '../i18n'
 
 // 使用i18n
 const { t } = useI18n()
+
+// 添加props接收SSH连接信息
+const props = defineProps<{
+  sshConnection?: {
+    id: string
+    name: string
+    connectionId: string
+  } | null
+}>()
 
 interface SystemInfo {
   osInfo: {
@@ -43,14 +52,114 @@ const systemInfo = ref<SystemInfo>({
   }
 })
 
+// 记录上一次CPU统计信息，用于计算使用率
+const lastCpuInfo = ref<{
+  idle: number
+  total: number
+} | null>(null)
+
 // 更新系统信息
 const updateSystemInfo = async () => {
   try {
-    const info = await window.api.getSystemInfo()
-    systemInfo.value = info
-    lastUpdateTime = Date.now() // 更新最后更新时间戳
+    if (props.sshConnection) {
+      // 远程系统信息获取
+      await updateRemoteSystemInfo()
+    } else {
+      // 本地系统信息获取
+      const info = await window.api.getSystemInfo()
+      systemInfo.value = info
+    }
+    lastUpdateTime = Date.now()
   } catch (error) {
-    console.error('Failed to get system info:', error)
+    console.error('获取系统信息失败:', error)
+  }
+}
+
+// 获取远程系统信息
+const updateRemoteSystemInfo = async () => {
+  if (!props.sshConnection?.connectionId) return
+
+  try {
+    // 获取操作系统信息
+    const osInfoCmd = 'uname -s -r -m'
+    const osInfoResult = await window.api.sshExec({
+      connectionId: props.sshConnection.connectionId,
+      command: osInfoCmd
+    })
+    
+    if (osInfoResult.success) {
+      const [platform, release, arch] = osInfoResult.output.trim().split(' ')
+      systemInfo.value.osInfo = {
+        platform,
+        release,
+        arch
+      }
+    }
+
+    // 获取CPU信息
+    const cpuInfoCmd = "cat /proc/cpuinfo | grep 'model name' | head -n1 && grep -c '^processor' /proc/cpuinfo && cat /proc/stat | grep '^cpu '"
+    const cpuInfoResult = await window.api.sshExec({
+      connectionId: props.sshConnection.connectionId,
+      command: cpuInfoCmd
+    })
+    
+    if (cpuInfoResult.success) {
+      const [modelLine, cores, statLine] = cpuInfoResult.output.trim().split('\n')
+      const model = modelLine.split(':')[1]?.trim() || 'Unknown CPU'
+      
+      // 解析CPU统计信息
+      const cpuStats = statLine.split(/\s+/).slice(1).map(Number)
+      const idle = cpuStats[3]
+      const total = cpuStats.reduce((a, b) => a + b, 0)
+      
+      // 计算CPU使用率
+      let usage = 0
+      if (lastCpuInfo.value) {
+        const idleDiff = idle - lastCpuInfo.value.idle
+        const totalDiff = total - lastCpuInfo.value.total
+        usage = 100 - (idleDiff / totalDiff) * 100
+      }
+      
+      // 更新CPU信息
+      systemInfo.value.cpuInfo = {
+        model,
+        cores: parseInt(cores) || 1,
+        usage: Math.round(usage * 100) / 100
+      }
+      
+      // 保存当前统计信息用于下次计算
+      lastCpuInfo.value = { idle, total }
+    }
+
+    // 获取内存信息
+    const memInfoCmd = 'cat /proc/meminfo | grep -E "^(MemTotal|MemFree|Buffers|Cached):"'
+    const memInfoResult = await window.api.sshExec({
+      connectionId: props.sshConnection.connectionId,
+      command: memInfoCmd
+    })
+    
+    if (memInfoResult.success) {
+      const memLines = memInfoResult.output.trim().split('\n')
+      const memInfo: Record<string, number> = {}
+      
+      memLines.forEach(line => {
+        const [key, value] = line.split(':')
+        memInfo[key.trim()] = parseInt(value.trim().split(' ')[0]) * 1024 // 转换为字节
+      })
+      
+      const total = memInfo.MemTotal
+      const free = memInfo.MemFree + (memInfo.Buffers || 0) + (memInfo.Cached || 0)
+      const used = total - free
+      
+      systemInfo.value.memoryInfo = {
+        total,
+        free,
+        used,
+        usedPercentage: Math.round((used / total) * 100 * 100) / 100
+      }
+    }
+  } catch (error) {
+    console.error('获取远程系统信息失败:', error)
   }
 }
 
@@ -129,6 +238,16 @@ const memoryProgressStyle = computed(() => ({
   width: `${systemInfo.value.memoryInfo.usedPercentage}%`,
   background: `linear-gradient(to right, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}, ${getProgressColor(systemInfo.value.memoryInfo.usedPercentage)}bb)`
 }))
+
+// 监听SSH连接状态变化
+watch(() => props.sshConnection, (newConn, oldConn) => {
+  if (newConn?.connectionId !== oldConn?.connectionId) {
+    // 重置lastCpuInfo
+    lastCpuInfo.value = null
+    // 立即更新系统信息
+    updateSystemInfo()
+  }
+}, { immediate: true })
 </script>
 
 <template>

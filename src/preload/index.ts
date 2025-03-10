@@ -53,6 +53,11 @@ const api = {
     ipcRenderer.send('ssh:disconnect', params)
   },
   
+  // 执行SSH命令
+  sshExec: async (params: { connectionId: string, command: string }): Promise<any> => {
+    return await ipcRenderer.invoke('ssh:exec', params)
+  },
+  
   // 本地终端相关
   createLocalTerminal: async (params: { cols: number, rows: number }): Promise<any> => {
     return await ipcRenderer.invoke('terminal:create', params)

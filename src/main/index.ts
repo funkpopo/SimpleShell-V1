@@ -42,7 +42,9 @@ const settingsPath = is.dev
   : path.join(app.getPath('userData'), 'config.json')
 
 // 聊天历史记录文件路径
-const chatHistoryPath = path.join(app.getPath('userData'), 'chathistory.json')
+const chatHistoryPath = is.dev
+  ? path.join(process.cwd(), 'chathistory.json')
+  : path.join(app.getPath('userData'), 'chathistory.json')
 
 // 输出环境信息
 // console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
@@ -1275,6 +1277,48 @@ app.whenReady().then(() => {
         return { success: false, error: error.message || '未知错误' };
       }
     });
+
+    // 执行SSH命令
+    ipcMain.handle('ssh:exec', async (_, { connectionId, command }) => {
+      try {
+        const connInfo = activeConnections.get(connectionId)
+        if (!connInfo) {
+          return { success: false, error: '连接不存在' }
+        }
+
+        return new Promise((resolve, reject) => {
+          connInfo.connection.exec(command, (err, stream) => {
+            if (err) {
+              console.error('执行SSH命令失败:', err)
+              reject({ success: false, error: err.message })
+              return
+            }
+
+            let output = ''
+            let errorOutput = ''
+
+            stream.on('data', (data) => {
+              output += data.toString()
+            })
+
+            stream.stderr.on('data', (data) => {
+              errorOutput += data.toString()
+            })
+
+            stream.on('close', () => {
+              if (errorOutput) {
+                resolve({ success: false, error: errorOutput })
+              } else {
+                resolve({ success: true, output })
+              }
+            })
+          })
+        })
+      } catch (error: any) {
+        console.error('执行SSH命令失败:', error)
+        return { success: false, error: error.message || '执行命令失败' }
+      }
+    })
   }
   
   setupIPCHandlers()
