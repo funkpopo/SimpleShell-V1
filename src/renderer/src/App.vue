@@ -31,12 +31,6 @@ const hasConnections = ref(false)
 // 是否使用本地终端模式
 const isLocalTerminalMode = ref(false)
 
-// 设置状态
-const isSettingsExpanded = ref(false)
-const toggleSettings = () => {
-  isSettingsExpanded.value = !isSettingsExpanded.value
-}
-
 // 左侧边栏状态
 const isLeftSidebarExpanded = ref(true)
 const sidebarWidth = ref(300)
@@ -69,22 +63,39 @@ const toggleLeftSidebar = () => {
 const handleMouseDown = () => {
   if (!isLeftSidebarExpanded.value) return
   isDragging.value = true
+  
+  // 在拖动开始时禁用过渡动画，使拖动更流畅
+  const sidebar = document.querySelector('.left-sidebar') as HTMLElement
+  if (sidebar) {
+    sidebar.classList.add('dragging')
+  }
+  
   document.addEventListener('mousemove', handleMouseMove)
   document.addEventListener('mouseup', handleMouseUp)
 }
 
 const handleMouseMove = (e: MouseEvent) => {
   if (!isDragging.value) return
-  const newWidth = e.clientX
-  if (newWidth >= 100 && newWidth <= 500) {
-    sidebarWidth.value = newWidth
-  }
+  
+  // 使用requestAnimationFrame减少不必要的渲染
+  window.requestAnimationFrame(() => {
+    const newWidth = e.clientX
+    if (newWidth >= 100 && newWidth <= 500) {
+      sidebarWidth.value = newWidth
+    }
+  })
 }
 
 const handleMouseUp = () => {
   isDragging.value = false
   document.removeEventListener('mousemove', handleMouseMove)
   document.removeEventListener('mouseup', handleMouseUp)
+  
+  // 恢复过渡动画
+  const sidebar = document.querySelector('.left-sidebar') as HTMLElement
+  if (sidebar) {
+    sidebar.classList.remove('dragging')
+  }
 }
 
 // 右侧边栏方法
@@ -100,50 +111,84 @@ const toggleRightSidebar = () => {
 const handleRightMouseDown = () => {
   if (!isRightSidebarExpanded.value) return
   isRightDragging.value = true
+  
+  // 在拖动开始时禁用过渡动画，使拖动更流畅
+  const sidebar = document.querySelector('.right-sidebar') as HTMLElement
+  if (sidebar) {
+    sidebar.classList.add('dragging')
+  }
+  
   document.addEventListener('mousemove', handleRightMouseMove)
   document.addEventListener('mouseup', handleRightMouseUp)
 }
 
 const handleRightMouseMove = (e: MouseEvent) => {
   if (!isRightDragging.value) return
-  const newWidth = window.innerWidth - e.clientX
-  if (newWidth >= 100 && newWidth <= 500) {
-    rightSidebarWidth.value = newWidth
-  }
+  
+  // 使用requestAnimationFrame减少不必要的渲染
+  window.requestAnimationFrame(() => {
+    const newWidth = window.innerWidth - e.clientX
+    if (newWidth >= 100 && newWidth <= 500) {
+      rightSidebarWidth.value = newWidth
+    }
+  })
 }
 
 const handleRightMouseUp = () => {
   isRightDragging.value = false
   document.removeEventListener('mousemove', handleRightMouseMove)
   document.removeEventListener('mouseup', handleRightMouseUp)
+  
+  // 恢复过渡动画
+  const sidebar = document.querySelector('.right-sidebar') as HTMLElement
+  if (sidebar) {
+    sidebar.classList.remove('dragging')
+  }
 }
 
 // 处理右侧边栏分割线拖动
 const handleRightSplitMouseDown = (e: MouseEvent) => {
   e.preventDefault()
   isRightSplitDragging.value = true
+  
+  // 在拖动开始时禁用过渡动画
+  const monitorSection = document.querySelector('.monitor-section') as HTMLElement
+  const connectionSection = document.querySelector('.connection-section') as HTMLElement
+  if (monitorSection) monitorSection.classList.add('dragging')
+  if (connectionSection) connectionSection.classList.add('dragging')
+  
   document.addEventListener('mousemove', handleRightSplitMouseMove)
   document.addEventListener('mouseup', handleRightSplitMouseUp)
 }
 
 const handleRightSplitMouseMove = (e: MouseEvent) => {
   if (!isRightSplitDragging.value) return
-  const sidebarRect = document.querySelector('.right-sidebar-content')?.getBoundingClientRect()
-  if (!sidebarRect) return
   
-  const offsetY = e.clientY - sidebarRect.top
-  const percentage = Math.round((offsetY / sidebarRect.height) * 100)
-  
-  // 限制拖动范围在20%-80%之间
-  if (percentage >= 20 && percentage <= 80) {
-    rightSidebarSplitPosition.value = percentage
-  }
+  // 使用requestAnimationFrame减少不必要的渲染
+  window.requestAnimationFrame(() => {
+    const sidebarRect = document.querySelector('.right-sidebar-content')?.getBoundingClientRect()
+    if (!sidebarRect) return
+    
+    const offsetY = e.clientY - sidebarRect.top
+    const percentage = Math.round((offsetY / sidebarRect.height) * 100)
+    
+    // 限制拖动范围在20%-80%之间
+    if (percentage >= 20 && percentage <= 80) {
+      rightSidebarSplitPosition.value = percentage
+    }
+  })
 }
 
 const handleRightSplitMouseUp = () => {
   isRightSplitDragging.value = false
   document.removeEventListener('mousemove', handleRightSplitMouseMove)
   document.removeEventListener('mouseup', handleRightSplitMouseUp)
+  
+  // 恢复过渡动画
+  const monitorSection = document.querySelector('.monitor-section') as HTMLElement
+  const connectionSection = document.querySelector('.connection-section') as HTMLElement
+  if (monitorSection) monitorSection.classList.remove('dragging')
+  if (connectionSection) connectionSection.classList.remove('dragging')
 }
 
 // 获取TerminalView组件的引用
@@ -1020,4 +1065,12 @@ onMounted(() => {
     transform: translate(-50%, 0);
   }
 }
+
+/* 添加新的CSS类，表示正在拖动时禁用过渡效果 */
+.dragging,
+.dragging * {
+  transition: none !important;
+}
+
+/* 右侧边栏分割线样式 */
 </style>

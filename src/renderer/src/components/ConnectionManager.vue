@@ -113,7 +113,7 @@ const loadConnections = async () => {
     
     // 默认展开第一个组织
     if (data.length > 0) {
-      expandedOrganizations.value[data[0].id] = true
+      expandedOrganizations.value[data[0].id] = false
     }
   } catch (error) {
     console.error('加载连接配置失败:', error)

@@ -8,7 +8,7 @@ import * as path from 'path'
 import { Client } from 'ssh2'
 import * as pty from 'node-pty'
 import SftpClient from 'ssh2-sftp-client'
-import { encryptConnection, decryptConnection, encryptString, decryptString } from './crypto-utils'
+import { encryptConnection, decryptConnection, decryptString } from './crypto-utils'
 
 // 主窗口实例
 let mainWindow: BrowserWindow | null = null

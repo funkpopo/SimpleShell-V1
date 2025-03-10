@@ -26,7 +26,15 @@ const zhCN = {
     inputPlaceholder: '请输入您的问题...',
     send: '发送',
     response: '这是模拟的AI响应，实际项目中可以接入OpenAI等AI服务。',
-    thinking: '思考中...'
+    thinking: '思考中...',
+    historyTitle: '历史记录',
+    noHistory: '没有历史记录',
+    startNewChat: '开始新对话',
+    deleteHistory: '删除历史记录',
+    deleteConfirm: '确定要删除所有历史记录吗？',
+    deleteSuccess: '历史记录已删除',
+    deleteError: '删除历史记录失败',
+    deleteCancel: '取消删除'
   },
   settings: {
     title: '全局设置',

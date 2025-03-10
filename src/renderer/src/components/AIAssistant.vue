@@ -114,6 +114,16 @@ const startDrag = (e: MouseEvent) => {
       floatingWidth: floatingWindow?.offsetWidth || 320,
       floatingHeight: floatingWindow?.offsetHeight || 450
     }
+    
+    // 添加拖拽状态CSS类，用于视觉反馈
+    floatingWindow?.classList.add('dragging')
+    
+    // 为body添加全局拖动样式
+    document.body.classList.add('ai-window-dragging')
+    
+    // 阻止事件冒泡和默认行为，防止文本选择等
+    e.preventDefault()
+    e.stopPropagation()
   }
 }
 
@@ -140,6 +150,10 @@ const onDrag = (e: MouseEvent) => {
     posX.value = newX
     posY.value = newY
   })
+  
+  // 阻止事件冒泡和默认行为
+  e.preventDefault()
+  e.stopPropagation()
 }
 
 // 结束拖拽
@@ -152,6 +166,13 @@ const endDrag = () => {
     
     // 保存位置到localStorage
     saveWindowPosition()
+    
+    // 移除拖拽状态CSS类
+    const floatingWindow = document.querySelector('.ai-floating-window') as HTMLElement
+    floatingWindow?.classList.remove('dragging')
+    
+    // 移除body上的全局拖动样式
+    document.body.classList.remove('ai-window-dragging')
     
     // 清除不再需要的参考数据
     windowDimensions.value = {
@@ -263,8 +284,32 @@ watch(messages, () => {
   saveMessagesToLocalStorage()
 }, { deep: true })
 
+// 切换历史面板
+const toggleHistory = (e: MouseEvent) => {
+  // 阻止事件冒泡，防止触发拖拽
+  e.stopPropagation()
+  showHistory.value = !showHistory.value
+  
+  // 如果打开历史面板，加载历史会话
+  if (showHistory.value) {
+    loadHistorySessions()
+  }
+}
+
+// 最小化窗口
+const minimizeWindow = (e: MouseEvent) => {
+  // 阻止事件冒泡，防止触发拖拽
+  e.stopPropagation()
+  emit('update:visible', false)
+}
+
 // 关闭窗口
-const closeWindow = async () => {
+const closeWindow = async (e?: MouseEvent) => {
+  // 如果是通过点击事件触发，阻止事件冒泡
+  if (e) {
+    e.stopPropagation()
+  }
+  
   // 保存当前会话
   await saveCurrentSession()
   
@@ -404,20 +449,6 @@ const escapeHtml = (unsafe: string): string => {
     .replace(/'/g, '&#039;')
 }
 
-// 最小化窗口
-const minimizeWindow = () => {
-  // 不清除会话内容，只隐藏窗口
-  emit('update:visible', false)
-}
-
-// 切换历史记录面板
-const toggleHistory = () => {
-  showHistory.value = !showHistory.value
-  if (showHistory.value) {
-    loadHistorySessions()
-  }
-}
-
 // 创建新会话
 const createNewSession = () => {
   // 保存当前会话
@@ -469,7 +500,8 @@ const selectHistorySession = (sessionId: string) => {
 
 // 删除历史会话
 const deleteHistorySession = async (sessionId: string, event: Event) => {
-  event.stopPropagation() // 阻止事件冒泡
+  // 阻止事件冒泡
+  event.stopPropagation()
   
   try {
     await window.api.deleteHistorySession(sessionId)
@@ -565,56 +597,71 @@ const saveMessagesToLocalStorage = () => {
     class="ai-floating-window" 
     :class="{ 'dark-theme': isDarkTheme }"
     :style="floatingWindowStyle"
-    @mousedown="startDrag"
   >
     <!-- 窗口头部 -->
-    <div class="window-header">
+    <div class="window-header" @mousedown="startDrag">
       <div class="window-title">{{ t('aiAssistant.title') }}</div>
       <div class="window-controls">
-        <button class="window-btn history-btn" @click="toggleHistory">
+        <button class="window-btn history-btn" @click="(e) => toggleHistory(e)">
           <img :src="historyIcon" alt="History" width="16" height="16">
         </button>
-        <button class="window-btn minimize-btn" @click="minimizeWindow">
+        <button class="window-btn minimize-btn" @click="(e) => minimizeWindow(e)">
           <img :src="minimizeIcon" alt="Minimize" width="16" height="16">
         </button>
-        <button class="window-close" @click="closeWindow">
+        <button class="window-close" @click="(e) => closeWindow(e)">
           <img :src="closeIcon" alt="Close" width="16" height="16">
         </button>
       </div>
     </div>
     
     <!-- 历史记录面板 -->
-    <div v-if="showHistory" class="history-panel">
-      <div class="history-header">
-        <h3>{{ t('aiAssistant.historyTitle') }}</h3>
-        <button class="new-chat-btn" @click="createNewSession">
-          {{ t('aiAssistant.newChat') }}
-        </button>
-      </div>
-      
-      <div class="history-list">
-        <div 
-          v-for="session in historySessions" 
-          :key="session.id" 
-          class="history-item"
-          :class="{ 'active': session.id === currentSessionId }"
-          @click="selectHistorySession(session.id)"
-        >
-          <div class="history-item-content">
-            <div class="history-item-title">{{ session.title }}</div>
-            <div class="history-item-preview">{{ session.preview }}</div>
-            <div class="history-item-date">{{ formatDate(session.timestamp) }}</div>
-          </div>
-          <button class="delete-history-btn" @click="(e) => deleteHistorySession(session.id, e)" :title="t('aiAssistant.delete')">
-            &times;
+    <Transition name="history-panel">
+      <div v-if="showHistory" class="history-panel">
+        <div class="history-header">
+          <h3>{{ t('aiAssistant.historyTitle') }}</h3>
+          <button class="new-chat-btn" @click="createNewSession">
+            <span class="icon-plus">+</span>
+            {{ t('aiAssistant.startNewChat') }}
           </button>
         </div>
         
-        <div v-if="historySessions.length === 0" class="history-empty">
-          {{ t('aiAssistant.noHistory') }}
+        <div class="history-list">
+          <div 
+            v-for="(session, index) in historySessions" 
+            :key="session.id" 
+            class="history-item"
+            :class="{ 'active': session.id === currentSessionId }"
+            @click="selectHistorySession(session.id)"
+            :style="{ '--index': index }"
+          >
+            <div class="history-item-content">
+              <div class="history-item-title">
+                <span class="history-icon">💬</span>
+                {{ session.title }}
+              </div>
+              <div class="history-item-preview">{{ session.preview }}</div>
+              <div class="history-item-date">
+                <span class="date-icon">🕒</span>
+                {{ formatDate(session.timestamp) }}
+              </div>
+            </div>
+            <button class="delete-history-btn" @click="(e) => deleteHistorySession(session.id, e)" :title="t('aiAssistant.delete')">
+              &times;
+            </button>
+          </div>
+          
+          <div v-if="historySessions.length === 0" class="history-empty">
+            <div class="empty-state">
+              <div class="empty-icon">📝</div>
+              <div>{{ t('aiAssistant.noHistory') }}</div>
+              <button class="start-btn" @click="createNewSession">
+                {{ t('aiAssistant.startNewChat') }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </Transition>
     
     <!-- 消息容器，最小化时隐藏 -->
     <div class="messages-container">
@@ -670,6 +717,18 @@ const saveMessagesToLocalStorage = () => {
 </template>
 
 <style scoped>
+/* 全局样式，防止拖动过程中的干扰 */
+:root {
+  /* 拖动过程中应用的全局样式 */
+  --dragging-cursor: move;
+}
+
+body.ai-window-dragging {
+  cursor: var(--dragging-cursor) !important;
+  user-select: none !important;
+}
+
+/* 组件特定样式 */
 .ai-floating-window {
   position: fixed;
   width: 320px;
@@ -688,10 +747,23 @@ const saveMessagesToLocalStorage = () => {
   will-change: transform;
 }
 
+/* 拖动状态样式 */
+.ai-floating-window.dragging {
+  transition: none; /* 拖动时禁用过渡效果，使移动更流畅 */
+  opacity: 0.95; /* 轻微透明以提供视觉反馈 */
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); /* 增强阴影 */
+  cursor: move; /* 显示移动光标 */
+  user-select: none; /* 防止文本选择 */
+}
+
 .ai-floating-window.dark-theme {
   background-color: #272727;
   border: 1px solid #444;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.ai-floating-window.dark-theme.dragging {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4); /* 暗色主题下的增强阴影 */
 }
 
 .window-header {
@@ -728,7 +800,7 @@ const saveMessagesToLocalStorage = () => {
   align-items: center;
 }
 
-.window-btn {
+.window-btn, .window-close {
   background: none;
   border: none;
   height: 24px;
@@ -740,6 +812,8 @@ const saveMessagesToLocalStorage = () => {
   cursor: pointer;
   padding: 0;
   transition: all 0.2s;
+  position: relative; /* 添加相对定位，便于处理点击事件 */
+  z-index: 10; /* 确保按钮在拖动区域上层 */
 }
 
 .window-btn:hover {
@@ -794,29 +868,43 @@ const saveMessagesToLocalStorage = () => {
   background-color: rgba(244, 67, 54, 0.2);
 }
 
-/* 历史记录面板 */
+/* 历史记录面板样式 */
 .history-panel {
   position: absolute;
   top: 48px;
   left: 0;
-  width: 100%;
-  height: calc(100% - 48px);
+  right: 0;
+  bottom: 0;
   background-color: white;
   z-index: 10;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: slideIn 0.2s ease-out;
+  border-top: 1px solid #e0e0e0;
 }
 
 .dark-theme .history-panel {
   background-color: #272727;
+  border-top: 1px solid #444;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .history-header {
+  padding: 12px 15px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 10px 15px;
+  justify-content: space-between;
   border-bottom: 1px solid #e0e0e0;
 }
 
@@ -826,7 +914,7 @@ const saveMessagesToLocalStorage = () => {
 
 .history-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   color: #333;
 }
@@ -836,55 +924,205 @@ const saveMessagesToLocalStorage = () => {
 }
 
 .new-chat-btn {
-  background-color: #2196f3;
-  color: white;
+  padding: 5px 10px;
+  background-color: #4d90fe;
   border: none;
   border-radius: 4px;
-  padding: 6px 12px;
-  font-size: 13px;
+  color: white;
+  font-size: 12px;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .new-chat-btn:hover {
-  background-color: #1976d2;
+  background-color: #357ae8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.new-chat-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .dark-theme .new-chat-btn {
   background-color: #1a73e8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .dark-theme .new-chat-btn:hover {
-  background-color: #1565c0;
+  background-color: #1967d2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.icon-plus {
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+  margin-top: -2px;
+}
+
+.history-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #444;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dark-theme .history-item-title {
+  color: #eee;
+}
+
+.history-icon {
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.date-icon {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-right: 3px;
+}
+
+.history-item-date {
+  font-size: 11px;
+  color: #999;
+  display: flex;
+  align-items: center;
+}
+
+.dark-theme .history-item-date {
+  color: #777;
+}
+
+/* 空状态样式 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 10px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+  opacity: 0.6;
+}
+
+.start-btn {
+  margin-top: 15px;
+  padding: 8px 16px;
+  background-color: #4d90fe;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.start-btn:hover {
+  background-color: #357ae8;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.start-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .start-btn {
+  background-color: #1a73e8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.dark-theme .start-btn:hover {
+  background-color: #1967d2;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
 .history-list {
   flex: 1;
   overflow-y: auto;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.dark-theme .history-list {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.history-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  transition: all 0.3s ease;
+}
+
+.history-list::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.4);
+}
+
+.dark-theme .history-list::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dark-theme .history-list::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
 }
 
 .history-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px;
-  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
   background-color: #f5f5f5;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  border: 1px solid transparent;
+}
+
+.history-item:last-child {
+  margin-bottom: 0;
 }
 
 .history-item:hover {
-  background-color: #e3f2fd;
+  background-color: #e8e8e8;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .history-item.active {
-  background-color: #bbdefb;
-  border-left: 3px solid #2196f3;
+  background-color: rgba(77, 144, 254, 0.1);
+  border: 1px solid rgba(77, 144, 254, 0.5);
 }
 
 .dark-theme .history-item {
@@ -892,96 +1130,90 @@ const saveMessagesToLocalStorage = () => {
 }
 
 .dark-theme .history-item:hover {
-  background-color: #424242;
+  background-color: #3a3a3a;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .dark-theme .history-item.active {
-  background-color: #263238;
-  border-left: 3px solid #1a73e8;
+  background-color: rgba(26, 115, 232, 0.2);
+  border: 1px solid rgba(26, 115, 232, 0.5);
 }
 
 .history-item-content {
   flex: 1;
-  overflow: hidden;
-}
-
-.history-item-title {
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dark-theme .history-item-title {
-  color: #eee;
+  min-width: 0;
+  padding-right: 10px;
 }
 
 .history-item-preview {
   font-size: 12px;
-  color: #666;
+  color: #777;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  margin-bottom: 4px;
+  max-height: 35px;
 }
 
 .dark-theme .history-item-preview {
-  color: #bbb;
-}
-
-.history-item-date {
-  font-size: 11px;
-  color: #888;
-  margin-top: 4px;
-}
-
-.dark-theme .history-item-date {
-  color: #999;
+  color: #aaa;
 }
 
 .delete-history-btn {
-  background: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: transparent;
   border: none;
-  color: #999;
-  font-size: 16px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  visibility: hidden;
-  transition: all 0.2s;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #999;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  transform: scale(0.8);
 }
 
 .history-item:hover .delete-history-btn {
-  visibility: visible;
+  opacity: 0.7;
+  transform: scale(1);
 }
 
 .delete-history-btn:hover {
+  opacity: 1 !important;
   background-color: rgba(244, 67, 54, 0.1);
   color: #f44336;
+  transform: scale(1.1);
 }
 
 .dark-theme .delete-history-btn {
-  color: #bbb;
+  color: #777;
 }
 
 .dark-theme .delete-history-btn:hover {
   background-color: rgba(244, 67, 54, 0.2);
-  color: #ef5350;
+  color: #ff5252;
 }
 
 .history-empty {
-  text-align: center;
-  color: #888;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
   padding: 20px;
+  color: #999;
+  font-size: 13px;
+  text-align: center;
   font-style: italic;
 }
 
 .dark-theme .history-empty {
-  color: #999;
+  color: #777;
 }
 
 .messages-container {
@@ -1202,5 +1434,36 @@ const saveMessagesToLocalStorage = () => {
   font-size: 13px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* 添加进入离开过渡效果 */
+.history-panel-enter-active,
+.history-panel-leave-active {
+  transition: all 0.25s ease-out;
+}
+
+.history-panel-enter-from,
+.history-panel-leave-to {
+  opacity: 0;
+  transform: translateY(-20px);
+}
+
+/* 历史记录项目动画 */
+.history-list .history-item {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: fadeIn 0.25s forwards;
+  animation-delay: calc(var(--index, 0) * 0.05s);
+  opacity: 0;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style> 

@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: electron-app
+appId: com.oshell.app
+productName: oshell
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: electron-app
+  executableName: oshell
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}
