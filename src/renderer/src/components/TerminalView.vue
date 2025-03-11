@@ -7,6 +7,8 @@ import { ITerminalAddon } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { LexerHighlightAddon } from '../utils/LexerHighlightAddon'
 import { lexerService } from '../services/LexerService'
+import CopyDayIcon from '../assets/copy-day.svg'
+import CopyNightIcon from '../assets/copy-night.svg'
 
 // 添加类型断言，临时解决类型问题
 const api = (window as any).api;
@@ -1218,8 +1220,12 @@ const hideContextMenu = () => {
            }"
            @click.stop>
         <div class="menu-item" @click="copySelectedText">
-          <span class="menu-icon">📋</span>
-          复制
+          <img
+            :src="props.isDarkTheme ? CopyNightIcon : CopyDayIcon"
+            class="menu-icon"
+            alt="复制"
+          />
+          <span class="menu-text">复制</span>
         </div>
       </div>
     </div>
@@ -1553,17 +1559,28 @@ const hideContextMenu = () => {
   transition: all 0.2s ease;
   margin: 0 4px;
   border-radius: 4px;
+  user-select: none;
 }
 
 .menu-item:hover {
-  background-color: var(--header-bg);
-  color: #1976d2;
+  background-color: var(--hover-bg);
 }
 
 .menu-icon {
-  margin-right: 10px;
-  font-size: 14px;
-  opacity: 0.8;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  opacity: 0.9;
+  transition: opacity 0.2s ease;
+}
+
+.menu-text {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.menu-item:hover .menu-icon {
+  opacity: 1;
 }
 
 /* 日间主题特定样式 */
@@ -1575,15 +1592,15 @@ const hideContextMenu = () => {
 }
 
 :root:not(.dark-theme) .menu-item {
-  color: #cccccc;
+  color: #222222;
 }
 
 :root:not(.dark-theme) .menu-item:hover {
-  background-color: #f5f8ff;
-  color: #1565c0;
+  background-color: var(--hover-bg);
+  color: var(--primary-color);
 }
 
-/* 深色主题特定样式保持不变 */
+/* 深色主题特定样式 */
 :root .dark-theme .context-menu {
   background: rgba(45, 45, 45, 0.98);
   border-color: #444;
@@ -1592,7 +1609,11 @@ const hideContextMenu = () => {
 }
 
 :root .dark-theme .menu-item:hover {
-  background-color: #3d3d3d;
-  color: #64b5f6;
+  background-color: var(--hover-bg);
+  color: var(--primary-color);
+}
+
+:root .dark-theme .menu-item {
+  color: #ececec;
 }
 </style> 

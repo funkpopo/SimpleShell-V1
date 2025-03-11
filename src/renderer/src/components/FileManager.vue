@@ -1994,7 +1994,7 @@ const closeInfoDialog = () => {
                 @click="clearTransferItem(item.id)"
                 title="清除此项"
               >
-                ×
+                X
               </button>
             </div>
           </div>
