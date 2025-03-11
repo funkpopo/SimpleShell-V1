@@ -87,7 +87,7 @@ const updateRemoteSystemInfo = async () => {
       command: osInfoCmd
     })
     
-    if (osInfoResult.success) {
+    if (osInfoResult.success && osInfoResult.output) {
       const [platform, release, arch] = osInfoResult.output.trim().split(' ')
       systemInfo.value.osInfo = {
         platform,
@@ -103,7 +103,7 @@ const updateRemoteSystemInfo = async () => {
       command: cpuInfoCmd
     })
     
-    if (cpuInfoResult.success) {
+    if (cpuInfoResult.success && cpuInfoResult.output) {
       const [modelLine, cores, statLine] = cpuInfoResult.output.trim().split('\n')
       const model = modelLine.split(':')[1]?.trim() || 'Unknown CPU'
       
@@ -138,7 +138,7 @@ const updateRemoteSystemInfo = async () => {
       command: memInfoCmd
     })
     
-    if (memInfoResult.success) {
+    if (memInfoResult.success && memInfoResult.output) {
       const memLines = memInfoResult.output.trim().split('\n')
       const memInfo: Record<string, number> = {}
       

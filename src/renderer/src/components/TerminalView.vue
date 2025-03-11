@@ -72,6 +72,10 @@ const isVisible = ref(true)
 // 全局错误信息
 const errorMessage = ref('')
 
+// 拖拽相关的状态
+const draggedTabId = ref<string | null>(null)
+const dragOverTabId = ref<string | null>(null)
+
 // 用于追踪最后一次创建终端的时间，避免频繁创建
 const lastTerminalCreationTime = ref<number>(0);
 const TERMINAL_CREATION_DEBOUNCE_MS = 300; // 防抖时间（毫秒）
@@ -1019,6 +1023,59 @@ const handleCloseTab = (id: string, event: Event) => {
 const dismissError = () => {
   errorMessage.value = '';
 }
+
+// 处理拖拽开始
+const handleDragStart = (tabId: string, event: DragEvent) => {
+  if (!event.dataTransfer) return
+  draggedTabId.value = tabId
+  event.dataTransfer.effectAllowed = 'move'
+  // 设置拖拽图像为半透明
+  const draggedTab = event.target as HTMLElement
+  if (draggedTab) {
+    event.dataTransfer.setDragImage(draggedTab, 0, 0)
+    draggedTab.style.opacity = '0.5'
+  }
+}
+
+// 处理拖拽结束
+const handleDragEnd = (event: DragEvent) => {
+  const draggedTab = event.target as HTMLElement
+  if (draggedTab) {
+    draggedTab.style.opacity = '1'
+  }
+  draggedTabId.value = null
+  dragOverTabId.value = null
+}
+
+// 处理拖拽悬停
+const handleDragOver = (tabId: string, event: DragEvent) => {
+  event.preventDefault()
+  if (draggedTabId.value === tabId) return
+  dragOverTabId.value = tabId
+}
+
+// 处理拖拽离开
+const handleDragLeave = () => {
+  dragOverTabId.value = null
+}
+
+// 处理拖拽放置
+const handleDrop = (targetTabId: string, event: DragEvent) => {
+  event.preventDefault()
+  if (!draggedTabId.value || draggedTabId.value === targetTabId) return
+
+  const draggedIndex = tabs.value.findIndex(tab => tab.id === draggedTabId.value)
+  const targetIndex = tabs.value.findIndex(tab => tab.id === targetTabId)
+  
+  if (draggedIndex !== -1 && targetIndex !== -1) {
+    // 重新排序标签页
+    const [draggedTab] = tabs.value.splice(draggedIndex, 1)
+    tabs.value.splice(targetIndex, 0, draggedTab)
+  }
+
+  draggedTabId.value = null
+  dragOverTabId.value = null
+}
 </script>
 
 <template>
@@ -1038,7 +1095,18 @@ const dismissError = () => {
         v-for="tab in tabs" 
         :key="tab.id" 
         class="tab"
-        :class="{ 'active': tab.isActive, [tab.status]: true }"
+        :class="{ 
+          'active': tab.isActive, 
+          [tab.status]: true,
+          'dragging': draggedTabId === tab.id,
+          'drag-over': dragOverTabId === tab.id
+        }"
+        draggable="true"
+        @dragstart="handleDragStart(tab.id, $event)"
+        @dragend="handleDragEnd($event)"
+        @dragover="handleDragOver(tab.id, $event)"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop(tab.id, $event)"
         @click="switchToTab(tab.id)"
       >
         <span class="tab-name">{{ tab.name }}</span>
@@ -1176,7 +1244,8 @@ const dismissError = () => {
   position: relative;
   border: 1px solid transparent;
   border-bottom: none;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, transform 0.2s;
+  user-select: none;
 }
 
 .tab.active {
@@ -1339,5 +1408,20 @@ const dismissError = () => {
 
 :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
   background-color: rgba(128, 128, 128, 0.7);
+}
+
+/* 拖拽相关样式 */
+.tab.dragging {
+  opacity: 0.5;
+  cursor: move;
+}
+
+.tab.drag-over {
+  border-left: 2px solid var(--primary-color, #1976d2);
+  transform: translateX(2px);
+}
+
+.dark-theme .tab.drag-over {
+  border-left-color: var(--primary-color-dark, #2196f3);
 }
 </style> 

@@ -1797,6 +1797,13 @@ const closeInfoDialog = () => {
             />
             查看文件信息
           </div>
+          <div class="menu-item" @click="loadCurrentDirectory">
+            <img
+              :src="props.isDarkTheme ? RefreshNightIcon : RefreshDayIcon"
+              class="refresh-icon"
+            />
+            刷新
+          </div>
           <div class="menu-item" @click="downloadSelectedFiles">
             <img
               :src="props.isDarkTheme ? DownloadNightIcon : DownloadDayIcon"
@@ -1838,6 +1845,13 @@ const closeInfoDialog = () => {
               class="info-icon"
             />
             查看文件夹信息
+          </div>
+          <div class="menu-item" @click="loadCurrentDirectory">
+            <img
+              :src="props.isDarkTheme ? RefreshNightIcon : RefreshDayIcon"
+              class="refresh-icon"
+            />
+            刷新
           </div>
           <div class="menu-item delete-menu-item" @click="deleteSelectedItems">
             <img
@@ -2101,6 +2115,11 @@ const closeInfoDialog = () => {
   flex-direction: column;
   background-color: #ffffff;
   color: #333333;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(128, 128, 128, 0.4) transparent;
+  overflow-y: auto;
+  max-height: 100%;
+  overflow-x: hidden;
 }
 
 .dark-theme {

@@ -1,6 +1,7 @@
 declare interface API {
   // SSH相关方法
   sshConnect: (connection: any) => Promise<{ success: boolean; id?: string; error?: string }>;
+  sshExec: (params: { connectionId: string; command: string }) => Promise<{ success: boolean; output?: string; error?: string }>;
   sshCreateShell: (options: { connectionId: string; cols: number; rows: number }) => Promise<{ success: boolean; shellId?: string; error?: string }>;
   sshSendInput: (options: { connectionId: string; shellId: string; data: string }) => void;
   sshResizeTerminal: (options: { connectionId: string; shellId: string; cols: number; rows: number }) => void;
