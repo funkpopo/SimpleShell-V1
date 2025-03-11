@@ -34,22 +34,24 @@ interface Organization {
 // 连接配置文件路径
 const connectionsFilePath = is.dev
   ? path.join(process.cwd(), 'connections.json')
-  : path.join(app.getPath('userData'), 'connections.json')
+  : path.join(getAppPath(), 'connections.json')
 
 // 设置文件路径
 const settingsPath = is.dev 
   ? path.join(process.cwd(), 'config.json')
-  : path.join(app.getPath('userData'), 'config.json')
+  : path.join(getAppPath(), 'config.json')
 
 // 聊天历史记录文件路径
 const chatHistoryPath = is.dev
   ? path.join(process.cwd(), 'chathistory.json')
-  : path.join(app.getPath('userData'), 'chathistory.json')
+  : path.join(getAppPath(), 'chathistory.json')
 
 // 输出环境信息
-// console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
-// console.log('连接配置文件路径:', connectionsFilePath)
-// console.log('当前工作目录:', process.cwd())
+console.log('应用环境:', is.dev ? '开发环境' : '生产环境')
+console.log('应用路径:', getAppPath())
+console.log('连接配置文件路径:', connectionsFilePath)
+console.log('设置文件路径:', settingsPath)
+console.log('聊天历史记录文件路径:', chatHistoryPath)
 
 // 加载连接配置
 function loadConnections(): Organization[] {
@@ -98,15 +100,14 @@ function saveConnections(organizations: Organization[]): boolean {
     
     // 确保目录存在
     if (!fs.existsSync(dirPath)) {
+      console.log('创建目录:', dirPath)
       fs.mkdirSync(dirPath, { recursive: true })
     }
     
     // 在开发环境中，额外打印路径信息
-    if (is.dev) {
-      // console.log('保存连接配置到:', connectionsFilePath)
-      // 数据可能很大，只打印长度信息
-      // console.log('保存数据:', Array.isArray(organizations) ? `${organizations.length}个组织` : '非数组')
-    }
+    console.log('保存连接配置到:', connectionsFilePath)
+    // 数据可能很大，只打印长度信息
+    console.log('保存数据:', Array.isArray(organizations) ? `${organizations.length}个组织` : '非数组')
     
     // 加密敏感数据
     const encryptedOrganizations = organizations.map(org => ({
@@ -151,6 +152,15 @@ function loadChatHistory() {
     } else {
       // 如果文件不存在，创建一个空的历史记录
       const emptyHistory = { sessions: [] }
+      
+      // 确保目录存在
+      const dirPath = path.dirname(chatHistoryPath)
+      if (!fs.existsSync(dirPath)) {
+        console.log('创建聊天历史目录:', dirPath)
+        fs.mkdirSync(dirPath, { recursive: true })
+      }
+      
+      console.log('创建空聊天历史文件:', chatHistoryPath)
       fs.writeFileSync(chatHistoryPath, JSON.stringify(emptyHistory, null, 2), 'utf-8')
       return emptyHistory
     }
@@ -176,6 +186,14 @@ function saveChatSession(session: any) {
       history.sessions.push(session)
     }
     
+    // 确保目录存在
+    const dirPath = path.dirname(chatHistoryPath)
+    if (!fs.existsSync(dirPath)) {
+      console.log('创建聊天历史目录:', dirPath)
+      fs.mkdirSync(dirPath, { recursive: true })
+    }
+    
+    console.log('保存聊天会话到:', chatHistoryPath)
     // 保存回文件
     fs.writeFileSync(chatHistoryPath, JSON.stringify(history, null, 2), 'utf-8')
     return { success: true }
@@ -193,6 +211,14 @@ function deleteHistorySession(sessionId: string) {
     // 过滤掉要删除的会话
     history.sessions = history.sessions.filter((s: any) => s.id !== sessionId)
     
+    // 确保目录存在
+    const dirPath = path.dirname(chatHistoryPath)
+    if (!fs.existsSync(dirPath)) {
+      console.log('创建聊天历史目录:', dirPath)
+      fs.mkdirSync(dirPath, { recursive: true })
+    }
+    
+    console.log('删除聊天会话，保存到:', chatHistoryPath)
     // 保存回文件
     fs.writeFileSync(chatHistoryPath, JSON.stringify(history, null, 2), 'utf-8')
     return { success: true }
@@ -1463,13 +1489,13 @@ function saveSettings(settings: any): boolean {
     
     // 确保目录存在
     if (!fs.existsSync(dirPath)) {
+      console.log('创建设置目录:', dirPath)
       fs.mkdirSync(dirPath, { recursive: true })
     }
     
     // 在开发环境中，额外打印路径信息
-    if (is.dev) {
-      console.log('保存设置到:', settingsPath)
-    }
+    console.log('保存设置到:', settingsPath)
+    console.log('设置内容:', JSON.stringify(cleanSettings))
     
     // 始终使用数组格式保存，以保持与config.json格式一致
     const jsonContent = JSON.stringify([cleanSettings], null, 2)

@@ -164,7 +164,6 @@ const updateRemoteSystemInfo = async () => {
 }
 
 let updateInterval: ReturnType<typeof setInterval>
-let isTimerPaused = false
 let lastUpdateTime = 0
 
 // 启动定时器
@@ -173,7 +172,6 @@ const startTimer = () => {
   updateSystemInfo() // 立即执行一次更新
   lastUpdateTime = Date.now()
   updateInterval = setInterval(updateSystemInfo, 2000)
-  isTimerPaused = false
 }
 
 // 处理页面可见性变化
