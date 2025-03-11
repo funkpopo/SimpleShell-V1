@@ -60,7 +60,7 @@ Ui Oval Interface Icons Collection
 
 - [√] 连接信息拖拽排序分组
 
-- [ ] 应用图标
+- [√] 应用图标
 
 - [ ] xterm中的鼠标事件[√]、快捷键、搜索机制
 

@@ -36,6 +36,8 @@ const posY = ref(80)  // 距离顶部80px
 const startX = ref(0)
 const startY = ref(0)
 const isDragging = ref(false)
+// 标记是否已经加载过位置
+const hasLoadedPosition = ref(false)
 
 // 窗口尺寸（仅在开始拖拽时获取一次）
 const windowDimensions = ref({
@@ -94,7 +96,9 @@ const sampleResponses = [
 // 浮窗样式
 const floatingWindowStyle = computed(() => {
   return {
-    transform: `translate3d(${posX.value}px, ${posY.value}px, 0)`
+    transform: `translate3d(${posX.value}px, ${posY.value}px, 0)`,
+    // 添加一个过渡效果，但仅在非拖动状态下生效
+    transition: isDragging.value ? 'none' : 'transform 0.05s ease'
   }
 })
 
@@ -174,12 +178,12 @@ const endDrag = () => {
     // 移除body上的全局拖动样式
     document.body.classList.remove('ai-window-dragging')
     
-    // 清除不再需要的参考数据
+    // 更新窗口尺寸引用为当前尺寸
     windowDimensions.value = {
-      windowWidth: 0,
-      windowHeight: 0,
-      floatingWidth: 320,
-      floatingHeight: 450
+      windowWidth: window.innerWidth,
+      windowHeight: window.innerHeight,
+      floatingWidth: floatingWindow?.offsetWidth || 320,
+      floatingHeight: floatingWindow?.offsetHeight || 450
     }
   }
 }
@@ -216,10 +220,19 @@ const ensureWindowVisible = () => {
 // 保存窗口位置
 const saveWindowPosition = () => {
   try {
+    // 确保位置值是有效的数字
+    if (isNaN(posX.value) || isNaN(posY.value)) {
+      console.error('保存窗口位置失败: 位置值无效', posX.value, posY.value)
+      return
+    }
+    
     localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify({
       x: posX.value,
       y: posY.value
     }))
+    
+    // 标记已加载位置，防止被默认值覆盖
+    hasLoadedPosition.value = true
   } catch (error) {
     console.error('保存窗口位置失败:', error)
   }
@@ -233,6 +246,9 @@ const loadWindowPosition = () => {
       const position = JSON.parse(savedPosition)
       posX.value = position.x
       posY.value = position.y
+      
+      // 标记已加载位置
+      hasLoadedPosition.value = true
       
       // 确保加载的位置有效且在可视区域内
       setTimeout(ensureWindowVisible, 0)
@@ -267,6 +283,12 @@ onMounted(async () => {
   
   // 加载窗口位置
   loadWindowPosition()
+  
+  // 如果没有加载到保存的位置，则使用默认位置
+  if (!hasLoadedPosition.value) {
+    posX.value = window.innerWidth - 350
+    posY.value = 80
+  }
 })
 
 // 清理全局事件
@@ -418,6 +440,16 @@ watch(() => props.visible, (newValue) => {
   if (newValue) {
     // 当浮窗显示时，滚动到底部
     scrollToBottom()
+    
+    // 如果已经加载过位置，确保窗口在可视区域内
+    if (hasLoadedPosition.value) {
+      ensureWindowVisible()
+    } else {
+      // 如果还没有加载过位置，设置默认位置
+      posX.value = window.innerWidth - 350
+      posY.value = 80
+      hasLoadedPosition.value = true
+    }
   }
 })
 
@@ -740,7 +772,7 @@ body.ai-window-dragging {
   flex-direction: column;
   overflow: hidden;
   z-index: 9999;
-  transition: transform 0.05s ease;
+  transition: transform 0.05s ease, box-shadow 0.2s ease;
   border: 1px solid #e0e0e0;
   top: 0;
   left: 0;
@@ -749,7 +781,7 @@ body.ai-window-dragging {
 
 /* 拖动状态样式 */
 .ai-floating-window.dragging {
-  transition: none; /* 拖动时禁用过渡效果，使移动更流畅 */
+  transition: none !important; /* 拖动时禁用所有过渡效果，使移动更流畅 */
   opacity: 0.95; /* 轻微透明以提供视觉反馈 */
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25); /* 增强阴影 */
   cursor: move; /* 显示移动光标 */
