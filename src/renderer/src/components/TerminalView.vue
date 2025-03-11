@@ -91,7 +91,7 @@ const darkTheme = {
   foreground: '#f0f0f0',
   cursor: '#fff',
   cursorAccent: '#000',
-  selection: 'rgba(255, 255, 255, 0.3)',
+  selectionBackground: 'rgba(255, 255, 255, 0.3)',
   black: '#000000',
   red: '#ce352c',
   green: '#00B34A',
@@ -107,7 +107,8 @@ const lightTheme = {
   foreground: '#333333',
   cursor: '#333',
   cursorAccent: '#fff',
-  selection: 'rgba(0, 0, 0, 0.3)',
+  selectionBackground: 'rgba(0, 120, 215, 0.3)',
+  selectionForeground: '#000000',
   black: '#000000',
   red: '#e53935',
   green: '#43a047',
@@ -324,7 +325,9 @@ const initializeTerminal = async (tab: TerminalTab) => {
     fastScrollModifier: 'alt',
     convertEol: true,
     allowTransparency: true,
-    disableStdin: false
+    disableStdin: false,
+    rightClickSelectsWord: false,
+    allowProposedApi: true
   });
 
   // 添加插件
@@ -369,6 +372,11 @@ const initializeTerminal = async (tab: TerminalTab) => {
     // 打开终端
     tab.terminal.open(terminalElement);
     console.log(`标签页 ${tab.id} 的终端DOM已创建并挂载`);
+    
+    // 添加右键菜单和中键粘贴事件监听
+    terminalElement.addEventListener('contextmenu', (e) => handleContextMenu(e, tab.terminal!));
+    terminalElement.addEventListener('mousedown', (e) => handleMiddleClick(e, tab.terminal!));
+    terminalElement.addEventListener('click', hideContextMenu);
     
     // 调整终端大小
     refreshTerminalSize(tab);
@@ -1076,6 +1084,71 @@ const handleDrop = (targetTabId: string, event: DragEvent) => {
   draggedTabId.value = null
   dragOverTabId.value = null
 }
+
+// 右键菜单相关状态
+const contextMenu = ref<{
+  visible: boolean;
+  x: number;
+  y: number;
+  selectedText: string;
+}>({
+  visible: false,
+  x: 0,
+  y: 0,
+  selectedText: ''
+});
+
+// 处理右键菜单
+const handleContextMenu = (event: MouseEvent, terminal: Terminal) => {
+  event.preventDefault();
+  
+  // 获取选中的文本
+  const selection = terminal.getSelection();
+  
+  // 如果有选中文本，显示右键菜单
+  if (selection) {
+    contextMenu.value = {
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      selectedText: selection
+    };
+  }
+};
+
+// 复制选中的文本
+const copySelectedText = async () => {
+  if (contextMenu.value.selectedText) {
+    try {
+      await navigator.clipboard.writeText(contextMenu.value.selectedText);
+      // 复制后隐藏菜单
+      contextMenu.value.visible = false;
+    } catch (err) {
+      console.error('复制失败:', err);
+    }
+  }
+};
+
+// 处理中键粘贴
+const handleMiddleClick = async (event: MouseEvent, terminal: Terminal) => {
+  if (event.button === 1) { // 中键点击
+    event.preventDefault();
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && terminal) {
+        // 发送粘贴的文本到终端
+        terminal.paste(text);
+      }
+    } catch (err) {
+      console.error('粘贴失败:', err);
+    }
+  }
+};
+
+// 隐藏右键菜单
+const hideContextMenu = () => {
+  contextMenu.value.visible = false;
+};
 </script>
 
 <template>
@@ -1135,6 +1208,20 @@ const handleDrop = (targetTabId: string, event: DragEvent) => {
     <!-- 终端内容区域 -->
     <div ref="terminalWrapper" class="terminal-wrapper">
       <div ref="terminalContainer" class="terminal-container"></div>
+      
+      <!-- 右键菜单 -->
+      <div v-if="contextMenu.visible" 
+           class="context-menu"
+           :style="{ 
+             left: `${contextMenu.x}px`, 
+             top: `${contextMenu.y}px` 
+           }"
+           @click.stop>
+        <div class="menu-item" @click="copySelectedText">
+          <span class="menu-icon">📋</span>
+          复制
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -1362,6 +1449,8 @@ const handleDrop = (targetTabId: string, event: DragEvent) => {
   --header-bg: #f5f5f5;
   --border-color: #e0e0e0;
   --text-primary: #333333;
+  --primary-color: #1976d2;
+  --hover-bg: #f5f8ff;
 }
 
 :root .dark-theme {
@@ -1369,6 +1458,8 @@ const handleDrop = (targetTabId: string, event: DragEvent) => {
   --header-bg: #272727;
   --border-color: #444444;
   --text-primary: #e0e0e0;
+  --primary-color: #2196f3;
+  --hover-bg: #3d3d3d;
 }
 
 /* 修改深度选择器，确保正确渲染xterm终端 */
@@ -1423,5 +1514,85 @@ const handleDrop = (targetTabId: string, event: DragEvent) => {
 
 .dark-theme .tab.drag-over {
   border-left-color: var(--primary-color-dark, #2196f3);
+}
+
+/* 右键菜单样式优化 */
+.context-menu {
+  position: fixed;
+  background: var(--terminal-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 0;
+  min-width: 160px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.15),
+              0 0 2px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  font-size: 13px;
+  backdrop-filter: blur(8px);
+  transform-origin: top left;
+  animation: menuAppear 0.15s ease-out;
+}
+
+@keyframes menuAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  color: var(--text-primary);
+  transition: all 0.2s ease;
+  margin: 0 4px;
+  border-radius: 4px;
+}
+
+.menu-item:hover {
+  background-color: var(--header-bg);
+  color: #1976d2;
+}
+
+.menu-icon {
+  margin-right: 10px;
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+/* 日间主题特定样式 */
+:root:not(.dark-theme) .context-menu {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: #e0e0e0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1),
+              0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+:root:not(.dark-theme) .menu-item {
+  color: #cccccc;
+}
+
+:root:not(.dark-theme) .menu-item:hover {
+  background-color: #f5f8ff;
+  color: #1565c0;
+}
+
+/* 深色主题特定样式保持不变 */
+:root .dark-theme .context-menu {
+  background: rgba(45, 45, 45, 0.98);
+  border-color: #444;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4),
+              0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+:root .dark-theme .menu-item:hover {
+  background-color: #3d3d3d;
+  color: #64b5f6;
 }
 </style> 

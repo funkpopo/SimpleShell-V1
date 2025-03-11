@@ -62,7 +62,7 @@ Ui Oval Interface Icons Collection
 
 5. 应用图标
 
-6. xterm中的鼠标事件、快捷键、搜索机制
+6. xterm中的~~鼠标事件~~、快捷键、搜索机制
 
 ~~7. 鼠标移出应用窗口后的freeze处理，添加高亮规则~~
 
