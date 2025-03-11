@@ -17,8 +17,8 @@ const zhCN = {
     unknown: '未知'
   },
   app: {
-    title: 'OShell - 简单Shell',
-    welcome: '欢迎使用 OShell'
+    title: 'SimpleShell',
+    welcome: '欢迎使用 SimpleShell'
   },
   aiAssistant: {
     title: 'AI助手',
@@ -141,8 +141,8 @@ const enUS = {
     unknown: 'Unknown'
   },
   app: {
-    title: 'OShell - Simple Shell',
-    welcome: 'Welcome to OShell'
+    title: 'SimpleShell',
+    welcome: 'Welcome to SimpleShell'
   },
   settings: {
     title: 'Global Settings',

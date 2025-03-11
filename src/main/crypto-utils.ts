@@ -15,12 +15,12 @@ function deriveEncryptionKey(): Buffer {
     const machineId = machineIdSync()
     
     // 结合OS信息生成长种子
-    const seed = `${machineId}-${os.hostname()}-${os.platform()}-${os.arch()}-oshell-secure-storage`
+    const seed = `${machineId}-${os.hostname()}-${os.platform()}-${os.arch()}-simpleshell-secure-storage`
     
     // 使用PBKDF2派生密钥
     return crypto.pbkdf2Sync(
       seed,
-      'oshell-salt',  // 固定盐值
+      'simpleshell-salt',  // 固定盐值
       10000,  // 迭代次数
       KEY_LENGTH,
       'sha512'
