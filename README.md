@@ -1,4 +1,4 @@
-# SimpleShell
+# SimpleShell-V2
 
 本项目前端基于Vue3 + Xterm.js + node-pty + Electron开发，实现一个Windows平台的SSH客户端GUI应用程序，具有直观友好的用户界面。
 
