@@ -325,23 +325,23 @@ const toggleAIAssistant = () => {
 onMounted(() => {
   // 设置主题切换快捷键
   window.addEventListener('keydown', (e) => {
-    // Alt+T 切换主题
-    if (e.altKey && e.key === 't') {
+    // Ctrl+T 切换主题
+    if (e.ctrlKey && e.key === 't') {
       toggleTheme()
     }
     
-    // Alt+L 打开新的本地终端
-    if (e.altKey && e.key === 'l') {
+    // Ctrl+L 打开新的本地终端
+    if (e.ctrlKey && e.key === 'l') {
       handleOpenLocalTerminal()
     }
     
-    // Alt+S 打开设置
-    if (e.altKey && e.key === 's') {
+    // Ctrl+S 打开设置
+    if (e.ctrlKey && e.key === 's') {
       settingsDialogVisible.value = true
     }
     
-    // Alt+A 打开/关闭AI助手
-    if (e.altKey && e.key === 'a') {
+    // Ctrl+A 打开/关闭AI助手
+    if (e.ctrlKey && e.key === 'a') {
       toggleAIAssistant()
     }
   })

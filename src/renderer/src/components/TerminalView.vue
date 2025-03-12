@@ -3,12 +3,15 @@ import { ref, onMounted, onBeforeUnmount, watchEffect, nextTick, computed } from
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { SearchAddon } from '@xterm/addon-search'
 import { ITerminalAddon } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { LexerHighlightAddon } from '../utils/LexerHighlightAddon'
 import { lexerService } from '../services/LexerService'
 import CopyDayIcon from '../assets/copy-day.svg'
 import CopyNightIcon from '../assets/copy-night.svg'
+import SearchDayIcon from '../assets/search-day.svg'
+import SearchNightIcon from '../assets/search-night.svg'
 
 // 添加类型断言，临时解决类型问题
 const api = (window as any).api;
@@ -40,6 +43,7 @@ interface TerminalTab {
   terminal?: Terminal
   fitAddon?: FitAddon
   highlightAddon?: ITerminalAddon
+  searchAddon?: SearchAddon
   terminalElement?: HTMLElement
   dataUnsubscribe?: () => void
   closeUnsubscribe?: () => void
@@ -86,6 +90,14 @@ const TERMINAL_CREATION_DEBOUNCE_MS = 300; // 防抖时间（毫秒）
 const isLoadingLexer = ref(false);
 const lexerLoaded = ref(false);
 const lexerError = ref<string | null>(null);
+
+// 搜索相关状态
+const showSearchBar = ref(false)
+const searchText = ref('')
+const searchCaseSensitive = ref(false)
+const searchWholeWord = ref(false)
+const searchRegex = ref(false)
+const searchResults = ref<{ count: number; current: number }>({ count: 0, current: 0 })
 
 // 终端主题设置
 const darkTheme = {
@@ -337,6 +349,10 @@ const initializeTerminal = async (tab: TerminalTab) => {
   tab.terminal.loadAddon(tab.fitAddon);
   tab.terminal.loadAddon(new WebLinksAddon());
   
+  // 添加搜索插件
+  tab.searchAddon = new SearchAddon();
+  tab.terminal.loadAddon(tab.searchAddon);
+  
   // 添加高亮插件
   if (lexerLoaded.value) {
     try {
@@ -379,6 +395,31 @@ const initializeTerminal = async (tab: TerminalTab) => {
     terminalElement.addEventListener('contextmenu', (e) => handleContextMenu(e, tab.terminal!));
     terminalElement.addEventListener('mousedown', (e) => handleMiddleClick(e, tab.terminal!));
     terminalElement.addEventListener('click', hideContextMenu);
+    
+    // 在下一个 tick 中查找 xterm 的 textarea 元素并添加键盘事件监听
+    nextTick(() => {
+      // 尝试查找 xterm 的 textarea 元素
+      const findXtermTextarea = () => {
+        const xtermTextarea = terminalElement.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement;
+        if (xtermTextarea) {
+          xtermTextarea.addEventListener('keydown', handleKeyDown);
+          console.log(`为标签页 ${tab.id} 的 xterm textarea 添加了键盘事件监听`);
+          return true;
+        }
+        return false;
+      };
+      
+      // 首次尝试查找
+      if (!findXtermTextarea()) {
+        console.log(`首次查找标签页 ${tab.id} 的 xterm textarea 失败，将在 100ms 后重试`);
+        // 如果没找到，延迟 100ms 后再次尝试
+        setTimeout(() => {
+          if (!findXtermTextarea()) {
+            console.warn(`无法找到标签页 ${tab.id} 的 xterm textarea 元素，将使用全局事件监听作为备选方案`);
+          }
+        }, 100);
+      }
+    });
     
     // 调整终端大小
     refreshTerminalSize(tab);
@@ -764,6 +805,17 @@ const disposeTerminal = (tab: TerminalTab) => {
         }
       }
       
+      // 清理搜索插件
+      if (tab.searchAddon) {
+        console.log(`清理搜索插件，标签ID: ${tab.id}`);
+        try {
+          tab.searchAddon.dispose();
+          tab.searchAddon = undefined;
+        } catch (error) {
+          console.error(`搜索插件清理失败，标签ID: ${tab.id}，错误:`, error);
+        }
+      }
+      
       // 安全销毁终端
       tab.terminal.dispose();
       console.log(`终端实例销毁成功，标签ID: ${tab.id}`);
@@ -901,10 +953,36 @@ defineExpose({
   hasAnyTabs
 });
 
+// 全局键盘事件处理函数
+const handleGlobalKeyDown = (event: KeyboardEvent) => {
+  if (event.ctrlKey && event.key === 'f' && activeTab.value) {
+    // 检查事件目标是否是终端相关元素
+    const target = event.target as HTMLElement;
+    if (target.closest('.terminal-instance') || 
+        target.classList.contains('xterm-helper-textarea') ||
+        target.classList.contains('xterm-cursor')) {
+      console.log('全局捕获到终端相关元素的 Ctrl+F 快捷键');
+      event.preventDefault();
+      
+      if (showSearchBar.value) {
+        closeSearchBar();
+      } else {
+        openSearchBar();
+      }
+      
+      return false;
+    }
+  }
+  return true; // 添加默认返回值
+};
+
 // 组件挂载时初始化
 onMounted(() => {
   isVisible.value = true;
   setupResizeObserver();
+  
+  // 添加全局键盘事件监听，确保在终端获得焦点时也能捕获 Ctrl+F
+  window.addEventListener('keydown', handleGlobalKeyDown);
   
   // 检查是否需要自动创建终端会话
   if (props.isLocalMode && tabs.value.length === 0) {
@@ -994,6 +1072,9 @@ onBeforeUnmount(() => {
   
   // 移除窗口大小变化监听
   window.removeEventListener('resize', handleWindowResize);
+  
+  // 移除全局键盘事件监听
+  window.removeEventListener('keydown', handleGlobalKeyDown);
 });
 
 // 监听主题变化
@@ -1151,6 +1232,285 @@ const handleMiddleClick = async (event: MouseEvent, terminal: Terminal) => {
 const hideContextMenu = () => {
   contextMenu.value.visible = false;
 };
+
+// 处理键盘事件，用于搜索快捷键
+const handleKeyDown = (event: KeyboardEvent) => {
+  // 检测 Ctrl+F 快捷键
+  if (event.ctrlKey && event.key === 'f') {
+    console.log('捕获到 Ctrl+F 快捷键');
+    event.preventDefault();
+    
+    if (showSearchBar.value) {
+      closeSearchBar();
+    } else {
+      openSearchBar();
+    }
+    
+    return false;
+  }
+  return true; // 添加默认返回值
+};
+
+// 打开搜索框
+const openSearchBar = () => {
+  console.log('打开搜索框');
+  showSearchBar.value = true;
+  
+  // 当搜索框显示时，聚焦搜索输入框
+  nextTick(() => {
+    const focusSearchInput = () => {
+      const searchInput = document.querySelector('.search-input') as HTMLInputElement;
+      if (searchInput) {
+        searchInput.focus();
+        console.log('搜索输入框已聚焦');
+        return true;
+      }
+      return false;
+    };
+    
+    // 首次尝试聚焦
+    if (!focusSearchInput()) {
+      console.log('首次聚焦搜索输入框失败，将在 50ms 后重试');
+      // 如果没找到，延迟 50ms 后再次尝试
+      setTimeout(() => {
+        if (!focusSearchInput()) {
+          console.warn('无法聚焦搜索输入框');
+        }
+      }, 50);
+    }
+  });
+};
+
+// 关闭搜索框
+const closeSearchBar = () => {
+  console.log('关闭搜索框');
+  showSearchBar.value = false;
+  searchText.value = '';
+  searchResults.value = { count: 0, current: 0 };
+  
+  // 清除搜索高亮
+  if (activeTab.value?.searchAddon) {
+    try {
+      activeTab.value.searchAddon.clearDecorations();
+      activeTab.value.searchAddon.clearActiveDecoration();
+    } catch (error) {
+      console.error('清除搜索高亮失败:', error);
+    }
+  }
+  
+  // 将焦点返回给终端
+  if (activeTab.value?.terminal) {
+    nextTick(() => {
+      activeTab.value?.terminal?.focus();
+    });
+  }
+};
+
+// 关闭搜索
+const closeSearch = () => {
+  closeSearchBar();
+};
+
+// 执行搜索
+const performSearch = () => {
+  console.log('执行搜索，文本:', searchText.value);
+  
+  if (!activeTab.value?.terminal || !activeTab.value.searchAddon || !searchText.value) {
+    searchResults.value = { count: 0, current: 0 };
+    return;
+  }
+  
+  try {
+    // 清除之前的高亮
+    activeTab.value.searchAddon.clearDecorations();
+    activeTab.value.searchAddon.clearActiveDecoration();
+    
+    // 设置搜索选项
+    const options = {
+      regex: searchRegex.value,
+      wholeWord: searchWholeWord.value,
+      caseSensitive: searchCaseSensitive.value,
+      incremental: true,
+      decorations: {
+        matchBackground: props.isDarkTheme ? '#4b4b4b' : '#ffff00',
+        matchBorder: props.isDarkTheme ? '#ffffff' : '#000000',
+        matchOverviewRuler: props.isDarkTheme ? '#ffffff' : '#000000',
+        activeMatchBackground: props.isDarkTheme ? '#6a6a6a' : '#ffa500',
+        activeMatchBorder: props.isDarkTheme ? '#ffffff' : '#000000',
+        activeMatchColorOverviewRuler: props.isDarkTheme ? '#ffffff' : '#000000'
+      }
+    };
+    
+    console.log('搜索选项:', options);
+    
+    // 执行搜索
+    const result = activeTab.value.searchAddon.findNext(searchText.value, options);
+    console.log('搜索结果:', result);
+    
+    // 更新搜索结果状态
+    if (result) {
+      // 计算匹配数量
+      const count = estimateSearchMatches(activeTab.value.terminal, searchText.value, options);
+      searchResults.value = { 
+        count: count, 
+        current: 1 // 假设当前是第一个匹配项
+      };
+      console.log('搜索匹配数:', count);
+    } else {
+      searchResults.value = { count: 0, current: 0 };
+      console.log('未找到匹配项');
+    }
+  } catch (error) {
+    console.error('搜索错误:', error);
+    searchResults.value = { count: 0, current: 0 };
+  }
+};
+
+// 查找下一个匹配项
+const findNext = () => {
+  if (!activeTab.value?.terminal || !activeTab.value.searchAddon || !searchText.value) return;
+  
+  try {
+    const options = {
+      regex: searchRegex.value,
+      wholeWord: searchWholeWord.value,
+      caseSensitive: searchCaseSensitive.value,
+      incremental: false,
+      decorations: {
+        matchBackground: props.isDarkTheme ? '#4b4b4b' : '#ffff00',
+        matchBorder: props.isDarkTheme ? '#ffffff' : '#000000',
+        matchOverviewRuler: props.isDarkTheme ? '#ffffff' : '#000000',
+        activeMatchBackground: props.isDarkTheme ? '#6a6a6a' : '#ffa500',
+        activeMatchBorder: props.isDarkTheme ? '#ffffff' : '#000000',
+        activeMatchColorOverviewRuler: props.isDarkTheme ? '#ffffff' : '#000000'
+      }
+    };
+    
+    console.log('查找下一个匹配项，选项:', options);
+    const result = activeTab.value.searchAddon.findNext(searchText.value, options);
+    console.log('查找下一个结果:', result);
+    
+    if (result && searchResults.value.count > 0) {
+      searchResults.value.current = (searchResults.value.current % searchResults.value.count) + 1;
+      
+      // 确保当前匹配项可见
+      activeTab.value.terminal.scrollToLine(activeTab.value.terminal.buffer.active.cursorY);
+    }
+  } catch (error) {
+    console.error('查找下一个匹配项错误:', error);
+  }
+};
+
+// 查找上一个匹配项
+const findPrevious = () => {
+  if (!activeTab.value?.terminal || !activeTab.value.searchAddon || !searchText.value) return;
+  
+  try {
+    const options = {
+      regex: searchRegex.value,
+      wholeWord: searchWholeWord.value,
+      caseSensitive: searchCaseSensitive.value,
+      incremental: false,
+      decorations: {
+        matchBackground: props.isDarkTheme ? '#4b4b4b' : '#ffff00',
+        matchBorder: props.isDarkTheme ? '#ffffff' : '#000000',
+        matchOverviewRuler: props.isDarkTheme ? '#ffffff' : '#000000',
+        activeMatchBackground: props.isDarkTheme ? '#6a6a6a' : '#ffa500',
+        activeMatchBorder: props.isDarkTheme ? '#ffffff' : '#000000',
+        activeMatchColorOverviewRuler: props.isDarkTheme ? '#ffffff' : '#000000'
+      }
+    };
+    
+    console.log('查找上一个匹配项，选项:', options);
+    const result = activeTab.value.searchAddon.findPrevious(searchText.value, options);
+    console.log('查找上一个结果:', result);
+    
+    if (result && searchResults.value.count > 0) {
+      searchResults.value.current = searchResults.value.current <= 1 
+        ? searchResults.value.count 
+        : searchResults.value.current - 1;
+      
+      // 确保当前匹配项可见
+      activeTab.value.terminal.scrollToLine(activeTab.value.terminal.buffer.active.cursorY);
+    }
+  } catch (error) {
+    console.error('查找上一个匹配项错误:', error);
+  }
+};
+
+// 估算搜索匹配数量
+const estimateSearchMatches = (terminal: Terminal, searchText: string, options: any): number => {
+  // 由于 xterm.js 的 SearchAddon 不直接提供匹配计数功能
+  // 这里使用更智能的估算方法
+  
+  // 如果搜索文本为空，返回0
+  if (!searchText.trim()) return 0;
+  
+  try {
+    // 获取终端缓冲区内容
+    const buffer = terminal.buffer.active;
+    const lineCount = buffer.length;
+    
+    // 创建正则表达式
+    let searchRegex: RegExp;
+    if (options.regex) {
+      // 如果是正则表达式搜索
+      try {
+        searchRegex = new RegExp(searchText, options.caseSensitive ? 'g' : 'gi');
+      } catch (e) {
+        console.error('无效的正则表达式:', searchText);
+        return 0;
+      }
+    } else {
+      // 普通文本搜索
+      const escapedText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const pattern = options.wholeWord ? `\\b${escapedText}\\b` : escapedText;
+      searchRegex = new RegExp(pattern, options.caseSensitive ? 'g' : 'gi');
+    }
+    
+    // 估算匹配数量
+    // 由于无法直接获取所有行的内容，我们使用一个估算值
+    // 实际应用中，这个值可能需要根据终端内容动态调整
+    
+    // 使用 searchRegex 进行简单的匹配计数估算
+    let matchCount = 0;
+    try {
+      // 尝试从可见区域获取一些文本进行估算
+      const visibleLines = Math.min(lineCount, 50);
+      for (let i = 0; i < visibleLines; i++) {
+        const line = buffer.getLine(i);
+        if (line) {
+          const lineText = line.translateToString();
+          const matches = lineText.match(searchRegex);
+          if (matches) {
+            matchCount += matches.length;
+          }
+        }
+      }
+      
+      // 如果找到匹配项，返回匹配数；否则根据终端大小估算
+      return matchCount > 0 ? matchCount : Math.max(1, Math.min(10, Math.floor(lineCount / 10)));
+    } catch (error) {
+      console.error('计算匹配数量时出错:', error);
+      return Math.max(1, Math.min(10, Math.floor(lineCount / 10)));
+    }
+  } catch (error) {
+    console.error('估算搜索匹配数量错误:', error);
+    return 1; // 出错时返回默认值
+  }
+};
+
+// 监听搜索文本变化
+watchEffect(() => {
+  // 监听主题变化，更新搜索高亮样式
+  if (activeTab.value?.searchAddon && showSearchBar.value && searchText.value) {
+    // 当主题变化时，重新应用搜索以更新高亮样式
+    if (props.isDarkTheme !== undefined) {
+      console.log('主题变化，更新搜索高亮样式');
+      performSearch();
+    }
+  }
+});
 </script>
 
 <template>
@@ -1209,6 +1569,81 @@ const hideContextMenu = () => {
     
     <!-- 终端内容区域 -->
     <div ref="terminalWrapper" class="terminal-wrapper">
+      <!-- 搜索框 -->
+      <div v-if="showSearchBar" class="search-container">
+        <div class="search-box">
+          <div class="search-input-container">
+            <img
+              :src="props.isDarkTheme ? SearchNightIcon : SearchDayIcon"
+              class="search-icon"
+              alt="搜索"
+            />
+            <input
+              type="text"
+              class="search-input"
+              v-model="searchText"
+              placeholder="搜索..."
+              @keydown.enter="findNext"
+              @keydown.shift.enter="findPrevious"
+              @keydown.escape="closeSearch"
+              @input="performSearch"
+            />
+            <span v-if="searchResults.count > 0" class="search-count">
+              {{ searchResults.current }}/{{ searchResults.count }}
+            </span>
+          </div>
+          
+          <div class="search-actions">
+            <button 
+              class="search-button" 
+              @click="findPrevious" 
+              title="上一个匹配项"
+              :disabled="!searchText || searchResults.count === 0"
+            >
+              <span>↑</span>
+            </button>
+            <button 
+              class="search-button" 
+              @click="findNext" 
+              title="下一个匹配项"
+              :disabled="!searchText || searchResults.count === 0"
+            >
+              <span>↓</span>
+            </button>
+            <button class="search-close" @click="closeSearch" title="关闭搜索">
+              <span>×</span>
+            </button>
+          </div>
+        </div>
+        
+        <div class="search-options">
+          <label class="search-option">
+            <input type="checkbox" v-model="searchCaseSensitive" @change="performSearch" />
+            <span>区分大小写</span>
+          </label>
+          <label class="search-option">
+            <input type="checkbox" v-model="searchWholeWord" @change="performSearch" />
+            <span>全词匹配</span>
+          </label>
+          <label class="search-option">
+            <input type="checkbox" v-model="searchRegex" @change="performSearch" />
+            <span>正则表达式</span>
+          </label>
+        </div>
+      </div>
+      
+      <!-- 搜索快捷键提示 -->
+      <div v-if="!showSearchBar && activeTab" class="search-shortcut-hint">
+        <div class="hint-content" @click="openSearchBar">
+          <img
+            :src="props.isDarkTheme ? SearchNightIcon : SearchDayIcon"
+            class="hint-icon"
+            alt="搜索"
+          />
+          <span class="hint-text">搜索</span>
+        </div>
+      </div>
+      
       <div ref="terminalContainer" class="terminal-container"></div>
       
       <!-- 右键菜单 -->
@@ -1615,5 +2050,198 @@ const hideContextMenu = () => {
 
 :root .dark-theme .menu-item {
   color: #ececec;
+}
+
+/* 搜索框样式 */
+.search-container {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 100;
+  background-color: var(--terminal-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border-color);
+  padding: 10px;
+  width: 320px;
+  animation: slideIn 0.2s ease-out;
+  backdrop-filter: blur(8px);
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.search-input-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  margin-right: 8px;
+}
+
+.dark-theme .search-input-container {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.search-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+  margin-right: 8px;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  height: 32px;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  padding: 0 8px;
+  width: 100%;
+}
+
+.search-count {
+  font-size: 12px;
+  color: var(--text-primary);
+  opacity: 0.7;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.search-actions {
+  display: flex;
+  align-items: center;
+}
+
+.search-button {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-right: 4px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.search-button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .search-button:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.search-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-close {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.search-close:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.dark-theme .search-close:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.search-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.search-option {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.search-option input {
+  margin-right: 4px;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 搜索快捷键提示 */
+.search-shortcut-hint {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 50;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.search-shortcut-hint:hover {
+  opacity: 1;
+}
+
+.hint-content {
+  display: flex;
+  align-items: center;
+  background-color: var(--terminal-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.hint-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dark-theme .hint-content {
+  background-color: rgba(40, 40, 40, 0.8);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 </style> 
