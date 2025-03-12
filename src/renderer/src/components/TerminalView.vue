@@ -295,6 +295,18 @@ const closeTab = (id: string) => {
   }
 }
 
+// 终端设置接口
+interface TerminalSettings {
+  terminalFontFamily: string
+  terminalFontSize: number
+}
+
+// 终端设置
+const terminalSettings = ref<TerminalSettings>({
+  terminalFontFamily: 'Consolas, "Courier New", monospace',
+  terminalFontSize: 14
+})
+
 // 初始化终端
 const initializeTerminal = async (tab: TerminalTab) => {
   console.log(`初始化标签页 ${tab.id} 的终端实例`);
@@ -330,8 +342,8 @@ const initializeTerminal = async (tab: TerminalTab) => {
   
   // 创建一个新的终端
   tab.terminal = new Terminal({
-    fontFamily: 'Consolas, "Courier New", monospace',
-    fontSize: 14,
+    fontFamily: terminalSettings.value.terminalFontFamily,
+    fontSize: terminalSettings.value.terminalFontSize,
     lineHeight: 1.2,
     cursorBlink: true,
     theme: currentTheme.value,
@@ -1510,6 +1522,104 @@ watchEffect(() => {
       performSearch();
     }
   }
+});
+
+// 更新终端字体和字号
+const updateTerminalFontSettings = () => {
+  tabs.value.forEach(tab => {
+    if (tab.terminal) {
+      tab.terminal.options.fontFamily = terminalSettings.value.terminalFontFamily;
+      tab.terminal.options.fontSize = terminalSettings.value.terminalFontSize;
+      
+      // 刷新终端大小以适应新的字体设置
+      if (tab.fitAddon) {
+        try {
+          tab.fitAddon.fit();
+        } catch (error) {
+          console.error('刷新终端大小失败:', error);
+        }
+      }
+    }
+  });
+}
+
+// 组件挂载时加载设置并监听设置变更
+onMounted(async () => {
+  // 加载终端设置
+  try {
+    const settings = await api.loadSettings();
+    if (settings) {
+      terminalSettings.value = {
+        terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
+        terminalFontSize: settings.terminalFontSize || 14
+      };
+      console.log('已加载终端设置:', terminalSettings.value);
+    }
+  } catch (error) {
+    console.error('加载终端设置失败:', error);
+  }
+  
+  // 监听设置变更
+  api.onSettingsChanged((newSettings: any) => {
+    console.log('检测到设置变更:', newSettings);
+    if (newSettings) {
+      // 检查终端字体或字号是否变化
+      const fontChanged = terminalSettings.value.terminalFontFamily !== newSettings.terminalFontFamily;
+      const sizeChanged = terminalSettings.value.terminalFontSize !== newSettings.terminalFontSize;
+      
+      // 更新设置
+      terminalSettings.value = {
+        terminalFontFamily: newSettings.terminalFontFamily || terminalSettings.value.terminalFontFamily,
+        terminalFontSize: newSettings.terminalFontSize || terminalSettings.value.terminalFontSize
+      };
+      
+      // 如果字体或字号变化，更新所有终端
+      if (fontChanged || sizeChanged) {
+        console.log('终端字体设置已变更，正在更新终端...');
+        updateTerminalFontSettings();
+      }
+    }
+  });
+  
+  // 创建一个MutationObserver实例，用于观察DOM变化
+  const mutationObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+        const el = mutation.target as HTMLElement;
+        // 检查元素是否可见 (通过检查display属性)
+        const isCurrentlyVisible = el.style.display !== 'none';
+        
+        // 如果可见性状态变化了
+        if (isVisible.value !== isCurrentlyVisible) {
+          isVisible.value = isCurrentlyVisible;
+          
+          // 如果变为可见，并且已经有活动标签页
+          if (isVisible.value && activeTab.value) {
+            console.log('Terminal became visible, refreshing size');
+            // 延迟一小段时间后刷新终端大小，确保DOM完全渲染
+            setTimeout(() => {
+              if (activeTab.value) {
+                refreshTerminalSize(activeTab.value);
+              }
+            }, 50);
+          }
+        }
+      }
+    }
+  });
+  
+  // 开始观察终端容器的父元素
+  if (terminalWrapper.value && terminalWrapper.value.parentElement) {
+    mutationObserver.observe(terminalWrapper.value.parentElement, {
+      attributes: true,
+      attributeFilter: ['style', 'class']
+    });
+  }
+  
+  // 在组件销毁时断开观察
+  onBeforeUnmount(() => {
+    mutationObserver.disconnect();
+  });
 });
 </script>
 

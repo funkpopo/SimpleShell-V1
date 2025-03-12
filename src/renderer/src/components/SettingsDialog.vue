@@ -24,6 +24,8 @@ interface GlobalSettings {
   language: string
   fontSize: number
   fontFamily: string
+  terminalFontFamily: string
+  terminalFontSize: number
 }
 
 // 防抖工具函数
@@ -42,7 +44,9 @@ function debounce<T extends (...args: any[]) => any>(fn: T, delay: number): (...
 const formData = ref<GlobalSettings>({
   language: 'zh-CN',
   fontSize: 14,
-  fontFamily: 'system-ui'
+  fontFamily: 'system-ui',
+  terminalFontFamily: 'Consolas, "Courier New", monospace',
+  terminalFontSize: 14
 })
 
 // 字体大小选项
@@ -51,6 +55,16 @@ const fontSizeOptions = [
   { label: t('settings.fontSizes.medium'), value: 14 },
   { label: t('settings.fontSizes.large'), value: 16 },
   { label: t('settings.fontSizes.extraLarge'), value: 18 }
+]
+
+// 终端字体大小选项
+const terminalFontSizeOptions = [
+  { label: t('settings.fontSizes.small'), value: 12 },
+  { label: t('settings.fontSizes.medium'), value: 14 },
+  { label: t('settings.fontSizes.large'), value: 16 },
+  { label: t('settings.fontSizes.extraLarge'), value: 18 },
+  { label: t('settings.fontSizes.huge'), value: 20 },
+  { label: t('settings.fontSizes.extraHuge'), value: 24 }
 ]
 
 // 语言选项
@@ -66,6 +80,17 @@ const fontFamilyOptions = [
   { label: t('settings.fontFamilies.yahei'), value: 'Microsoft YaHei' },
   { label: t('settings.fontFamilies.source'), value: 'Noto Sans SC' },
   { label: t('settings.fontFamilies.roboto'), value: 'Roboto' }
+]
+
+// 终端字体选项
+const terminalFontFamilyOptions = [
+  { label: 'Consolas', value: 'Consolas, "Courier New", monospace' },
+  { label: 'Courier New', value: '"Courier New", monospace' },
+  { label: 'Menlo', value: 'Menlo, Monaco, "Courier New", monospace' },
+  { label: 'Monaco', value: 'Monaco, "Courier New", monospace' },
+  { label: 'Source Code Pro', value: '"Source Code Pro", monospace' },
+  { label: 'Fira Code', value: '"Fira Code", monospace' },
+  { label: 'JetBrains Mono', value: '"JetBrains Mono", monospace' }
 ]
 
 // 加载设置
@@ -90,7 +115,9 @@ const saveSettingsRealtime = async (newSettings: GlobalSettings) => {
     const cleanSettings = {
       language: newSettings.language,
       fontSize: newSettings.fontSize,
-      fontFamily: newSettings.fontFamily
+      fontFamily: newSettings.fontFamily,
+      terminalFontFamily: newSettings.terminalFontFamily,
+      terminalFontSize: newSettings.terminalFontSize
     }
     
     console.log('实时保存设置:', JSON.stringify(cleanSettings))
@@ -120,7 +147,9 @@ const saveSettings = async () => {
     const cleanSettings = {
       language: formData.value.language,
       fontSize: formData.value.fontSize,
-      fontFamily: formData.value.fontFamily
+      fontFamily: formData.value.fontFamily,
+      terminalFontFamily: formData.value.terminalFontFamily,
+      terminalFontSize: formData.value.terminalFontSize
     }
     
     console.log('开始保存设置:', JSON.stringify(cleanSettings))
@@ -232,6 +261,42 @@ onMounted(() => {
               >
                 <option 
                   v-for="option in fontFamilyOptions" 
+                  :key="option.value" 
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            
+            <!-- 终端字体大小设置 -->
+            <div class="form-input">
+              <label for="terminalFontSize">{{ t('settings.terminalFontSize') }}</label>
+              <select 
+                id="terminalFontSize" 
+                v-model="formData.terminalFontSize"
+                class="settings-select"
+              >
+                <option 
+                  v-for="option in terminalFontSizeOptions" 
+                  :key="option.value" 
+                  :value="option.value"
+                >
+                  {{ option.label }} ({{ option.value }}px)
+                </option>
+              </select>
+            </div>
+            
+            <!-- 终端字体设置 -->
+            <div class="form-input">
+              <label for="terminalFontFamily">{{ t('settings.terminalFontFamily') }}</label>
+              <select 
+                id="terminalFontFamily" 
+                v-model="formData.terminalFontFamily"
+                class="settings-select"
+              >
+                <option 
+                  v-for="option in terminalFontFamilyOptions" 
                   :key="option.value" 
                   :value="option.value"
                 >

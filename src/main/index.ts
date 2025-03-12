@@ -976,7 +976,7 @@ app.whenReady().then(() => {
         }
 
         // 创建唯一的传输ID
-        const transferId = `download-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const downloadId = `download-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         
         // 获取文件信息以获取大小
         const stats = await sftp.stat(remotePath);
@@ -985,7 +985,7 @@ app.whenReady().then(() => {
         // 发送开始传输事件
         if (mainWindow) {
           mainWindow.webContents.send('sftp:transferStart', {
-            id: transferId,
+            id: downloadId,
             type: 'download',
             filename: path.basename(remotePath),
             path: remotePath,
@@ -1004,9 +1004,9 @@ app.whenReady().then(() => {
           transferred += chunk.length;
           
           // 发送进度更新
-          if (mainWindow) {
-            mainWindow.webContents.send('sftp:transferProgress', {
-              id: transferId,
+          if (mainWindow && fileSize > 0) {
+            mainWindow.webContents.send('file-download-progress', {
+              id: downloadId,
               transferred,
               progress: Math.min(100, Math.round((transferred / fileSize) * 100))
             });
@@ -1014,7 +1014,7 @@ app.whenReady().then(() => {
         });
         
         // 存储传输任务信息
-        activeTransfers.set(transferId, { 
+        activeTransfers.set(downloadId, { 
           readStream, 
           writeStream, 
           connectionId 
@@ -1026,22 +1026,22 @@ app.whenReady().then(() => {
             // 发送完成事件
             if (mainWindow) {
               mainWindow.webContents.send('sftp:transferComplete', {
-                id: transferId,
+                id: downloadId,
                 success: true
               });
             }
             
             // 移除传输任务
-            activeTransfers.delete(transferId);
+            activeTransfers.delete(downloadId);
             
-            resolve({ success: true, transferId });
+            resolve({ success: true, transferId: downloadId });
           });
           
           writeStream.on('error', (err) => {
             // 发送错误事件
             if (mainWindow) {
               mainWindow.webContents.send('sftp:transferError', {
-                id: transferId,
+                id: downloadId,
                 error: err.message
               });
             }
@@ -1068,7 +1068,7 @@ app.whenReady().then(() => {
         const remoteFilePath = remotePath === '/' ? `/${fileName}` : `${remotePath}/${fileName}`
         
         // 创建唯一的传输ID
-        const transferId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+        const uploadId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
         
         // 获取文件信息以获取大小
         const stats = fs.statSync(localPath);
@@ -1077,7 +1077,7 @@ app.whenReady().then(() => {
         // 发送开始传输事件
         if (mainWindow) {
           mainWindow.webContents.send('sftp:transferStart', {
-            id: transferId,
+            id: uploadId,
             type: 'upload',
             filename: fileName,
             path: localPath,
@@ -1098,7 +1098,7 @@ app.whenReady().then(() => {
           // 发送进度更新
           if (mainWindow) {
             mainWindow.webContents.send('sftp:transferProgress', {
-              id: transferId,
+              id: uploadId,
               transferred,
               progress: Math.min(100, Math.round((transferred / fileSize) * 100))
             });
@@ -1106,7 +1106,7 @@ app.whenReady().then(() => {
         });
         
         // 存储传输任务信息
-        activeTransfers.set(transferId, { 
+        activeTransfers.set(uploadId, { 
           readStream, 
           writeStream, 
           connectionId 
@@ -1118,22 +1118,22 @@ app.whenReady().then(() => {
             // 发送完成事件
             if (mainWindow) {
               mainWindow.webContents.send('sftp:transferComplete', {
-                id: transferId,
+                id: uploadId,
                 success: true
               });
             }
             
             // 移除传输任务
-            activeTransfers.delete(transferId);
+            activeTransfers.delete(uploadId);
             
-            resolve({ success: true, transferId });
+            resolve({ success: true, transferId: uploadId });
           });
           
           writeStream.on('error', (err) => {
             // 发送错误事件
             if (mainWindow) {
               mainWindow.webContents.send('sftp:transferError', {
-                id: transferId,
+                id: uploadId,
                 error: err.message
               });
             }
@@ -1482,7 +1482,9 @@ function saveSettings(settings: any): boolean {
     const cleanSettings = {
       language: settings.language || 'zh-CN',
       fontSize: settings.fontSize || 14,
-      fontFamily: settings.fontFamily || 'system-ui'
+      fontFamily: settings.fontFamily || 'system-ui',
+      terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
+      terminalFontSize: settings.terminalFontSize || 14
     }
     
     const dirPath = path.dirname(settingsPath)
@@ -1504,6 +1506,12 @@ function saveSettings(settings: any): boolean {
     fs.writeFileSync(settingsPath, jsonContent, { encoding: 'utf-8', flag: 'w' })
     
     console.log('设置保存成功')
+    
+    // 通知所有窗口设置已更改
+    if (mainWindow) {
+      mainWindow.webContents.send('settings-saved', cleanSettings)
+    }
+    
     return true
   } catch (error) {
     console.error('保存设置失败:', error)
@@ -1516,7 +1524,9 @@ function getDefaultSettings(): any {
   return {
     language: 'zh-CN',
     fontSize: 14,
-    fontFamily: 'system-ui'
+    fontFamily: 'system-ui',
+    terminalFontFamily: 'Consolas, "Courier New", monospace',
+    terminalFontSize: 14
   }
 }
 
@@ -1551,7 +1561,9 @@ ipcMain.handle('save-settings', async (_event, settings) => {
     const cleanSettings = {
       language: settings.language || 'zh-CN',
       fontSize: settings.fontSize || 14,
-      fontFamily: settings.fontFamily || 'system-ui'
+      fontFamily: settings.fontFamily || 'system-ui',
+      terminalFontFamily: settings.terminalFontFamily || 'Consolas, "Courier New", monospace',
+      terminalFontSize: settings.terminalFontSize || 14
     }
     
     const success = saveSettings(cleanSettings)

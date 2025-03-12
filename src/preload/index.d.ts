@@ -74,6 +74,8 @@ interface GlobalSettings {
   language: string
   fontSize: number
   fontFamily: string
+  terminalFontFamily: string
+  terminalFontSize: number
 }
 
 interface API {

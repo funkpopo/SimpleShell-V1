@@ -41,11 +41,15 @@ const zhCN = {
     language: '界面语言',
     fontSize: '界面字号',
     fontFamily: '界面字体',
+    terminalFontSize: '终端字号',
+    terminalFontFamily: '终端字体',
     fontSizes: {
       small: '小',
       medium: '中',
       large: '大',
-      extraLarge: '特大'
+      extraLarge: '特大',
+      huge: '超大',
+      extraHuge: '巨大'
     },
     fontFamilies: {
       system: '系统默认',
@@ -149,11 +153,15 @@ const enUS = {
     language: 'Interface Language',
     fontSize: 'Interface Font Size',
     fontFamily: 'Interface Font',
+    terminalFontSize: 'Terminal Font Size',
+    terminalFontFamily: 'Terminal Font',
     fontSizes: {
       small: 'Small',
       medium: 'Medium',
       large: 'Large',
-      extraLarge: 'Extra Large'
+      extraLarge: 'Extra Large',
+      huge: 'Huge',
+      extraHuge: 'Extra Huge'
     },
     fontFamilies: {
       system: 'System Default',

@@ -184,6 +184,13 @@ const api = {
   // 保存设置
   saveSettings: (settings: any) => ipcRenderer.invoke('save-settings', settings),
   
+  // 监听设置变更
+  onSettingsChanged: (callback: (settings: any) => void) => {
+    const handler = (_: any, settings: any) => callback(settings)
+    ipcRenderer.on('settings-saved', handler)
+    return () => ipcRenderer.removeListener('settings-saved', handler)
+  },
+  
   // 文件传输事件监听
   onTransferStart: (callback: (data: any) => void) => {
     const handler = (_: any, data: any) => callback(data)
